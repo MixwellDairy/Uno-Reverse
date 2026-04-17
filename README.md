@@ -4,7 +4,7 @@ Be the AI in OpenWebUI chats.
 
 `uno-reverse` runs:
 - a **fake Ollama-compatible API** on `http://localhost:11434`
-- a **human control panel** on `http://localhost:3000`
+- a **human control panel** on `http://localhost:6741`
 
 When a user sends a message to the fake model, it appears in your panel. You type the response, and it streams back as if it came from an AI model.
 
@@ -49,12 +49,12 @@ npm start
 
 You should see:
 - `🤖 Fake Ollama API: http://localhost:11434`
-- `🧠 Control panel: http://localhost:3000`
+- `🧠 Control panel: http://localhost:6741`
 
 ### 5) Open control panel
 Go to:
 
-`http://localhost:3000`
+`http://localhost:6741`
 
 ### 6) Configure OpenWebUI
 Set Ollama/base URL to:
