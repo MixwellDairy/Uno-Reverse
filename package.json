@@ -4,7 +4,10 @@
   "description": "Fake Ollama server + human control panel (become the AI)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "install:app": "npm ci",
+    "uninstall:app": "node -e \"const fs=require('fs'); const p=['node_modules','package-lock.json']; p.forEach(x=>{ try{fs.rmSync(x,{recursive:true,force:true}); console.log('Removed',x);}catch(e){console.log('Skip',x);} }); console.log('Uno-reverse dependencies removed.');\"",
+    "update:app": "npm update && npm audit fix || true"
   },
   "dependencies": {
     "body-parser": "^1.20.2",
