@@ -9,7 +9,7 @@ const bodyParser = require("body-parser");
 // Config
 // -------------------------
 const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11434);
-const PANEL_PORT = Number(process.env.PANEL_PORT || 3000);
+const PANEL_PORT = Number(process.env.PANEL_PORT || 6741);
 const TIMEOUT_SECONDS = Number(process.env.UNO_REVERSE_TIMEOUT_SECONDS || 300);
 
 // -------------------------
@@ -67,7 +67,7 @@ function ndjsonWrite(res, obj) {
 }
 
 // -------------------------
-// Control Panel Server (3000)
+// Control Panel Server (6741)
 // -------------------------
 const panelApp = express();
 panelApp.use(cors());
@@ -273,3 +273,4 @@ ollamaApp.listen(OLLAMA_PORT, () => {
   console.log(`🤖 Fake Ollama API: http://localhost:${OLLAMA_PORT}`);
   console.log(`⏱️ Timeout: ${TIMEOUT_SECONDS}s`);
 });
+6
