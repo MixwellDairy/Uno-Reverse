@@ -13,11 +13,10 @@
       --muted: #9eb0e0;
       --accent: #6ea8fe;
       --accent-2: #7ef0c2;
-      --warn: #ffcc66;
       --danger: #ff7a7a;
       --ok: #72e39a;
       --border: #25315f;
-      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
       --radius: 14px;
     }
 
@@ -36,11 +35,9 @@
     .wrap { max-width: 1200px; margin: 28px auto; padding: 0 16px 32px; }
 
     .topbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      display: flex; align-items: center; gap: 12px;
       margin-bottom: 18px;
-      background: rgba(18, 26, 51, 0.85);
+      background: rgba(18,26,51,.85);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 14px 16px;
@@ -49,235 +46,102 @@
     }
 
     .logo {
-      width: 36px; height: 36px;
-      display: grid; place-items: center;
+      width: 36px; height: 36px; display: grid; place-items: center;
       border-radius: 10px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #0a122a;
-      font-weight: 900;
+      background: linear-gradient(135deg,var(--accent),var(--accent-2));
+      color: #0a122a; font-weight: 900;
     }
 
     .title { font-size: 1.08rem; font-weight: 700; }
-    .subtitle { color: var(--muted); font-size: 0.9rem; }
+    .subtitle { color: var(--muted); font-size: .9rem; }
 
-    .status {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
+    .status { margin-left: auto; display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.9rem; }
     .dot {
-      width: 10px; height: 10px; border-radius: 999px;
-      background: var(--danger);
-      box-shadow: 0 0 0 4px rgba(255,122,122,.16);
+      width:10px; height:10px; border-radius:999px; background:var(--danger);
+      box-shadow:0 0 0 4px rgba(255,122,122,.16);
     }
     .dot.connected {
-      background: var(--ok);
-      box-shadow: 0 0 0 4px rgba(114,227,154,.16);
+      background:var(--ok);
+      box-shadow:0 0 0 4px rgba(114,227,154,.16);
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 330px 1fr;
-      gap: 16px;
-    }
-
+    .grid { display:grid; grid-template-columns:330px 1fr; gap:16px; }
     .card {
-      background: rgba(18, 26, 51, 0.9);
-      border: 1px solid var(--border);
+      background: rgba(18,26,51,.9);
+      border:1px solid var(--border);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      overflow: hidden;
+      overflow:hidden;
     }
 
     .card-header {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      font-weight: 700;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: linear-gradient(180deg, rgba(255,255,255,.02), transparent);
+      padding:12px 14px; border-bottom:1px solid var(--border);
+      font-weight:700; display:flex; justify-content:space-between; align-items:center;
     }
 
-    .muted { color: var(--muted); font-weight: 500; font-size: .88rem; }
+    .muted { color:var(--muted); font-weight:500; font-size:.88rem; }
     .count-pill {
-      background: #1d2a56;
-      color: #cfe0ff;
-      border: 1px solid #2f4287;
-      border-radius: 999px;
-      padding: 3px 9px;
-      font-size: .78rem;
-      font-weight: 700;
+      background:#1d2a56; color:#cfe0ff; border:1px solid #2f4287;
+      border-radius:999px; padding:3px 9px; font-size:.78rem; font-weight:700;
     }
 
-    .list {
-      max-height: calc(100vh - 190px);
-      overflow: auto;
-      padding: 8px;
-    }
-
+    .list { max-height: calc(100vh - 190px); overflow:auto; padding:8px; }
     .item {
-      border: 1px solid #28386f;
-      background: #111a39;
-      border-radius: 12px;
-      padding: 10px;
-      margin: 8px 0;
-      cursor: pointer;
-      transition: .15s ease;
+      border:1px solid #28386f; background:#111a39; border-radius:12px;
+      padding:10px; margin:8px 0; cursor:pointer; transition:.15s ease;
     }
+    .item:hover { transform:translateY(-1px); border-color:#3e59b8; }
+    .item.active { border-color:var(--accent); background:#16214a; }
 
-    .item:hover { transform: translateY(-1px); border-color: #3e59b8; }
-    .item.active { border-color: var(--accent); background: #16214a; }
-    .item.answered { opacity: .6; }
+    .item-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px; }
+    .item-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#a9bfff; font-size:12px; }
+    .item-time { color:var(--muted); font-size:12px; }
+    .item-prompt { color:#dbe6ff; font-size:13px; line-height:1.35; max-height:54px; overflow:hidden; }
 
-    .item-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
-
-    .item-id {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: #a9bfff;
-      font-size: 12px;
-    }
-
-    .item-time { color: var(--muted); font-size: 12px; }
-    .item-prompt {
-      color: #dbe6ff;
-      font-size: 13px;
-      line-height: 1.35;
-      max-height: 54px;
-      overflow: hidden;
-    }
-
-    .chat-panel {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      min-height: calc(100vh - 190px);
-    }
+    .chat-panel { display:grid; grid-template-rows:auto 1fr auto; min-height: calc(100vh - 190px); }
 
     .chat-meta {
-      padding: 14px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      background: rgba(15, 23, 48, .6);
+      padding:14px; border-bottom:1px solid var(--border);
+      display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+      background: rgba(15,23,48,.6);
     }
 
-    .meta-left { min-width: 240px; }
-    .meta-row { font-size: 13px; color: var(--muted); margin: 3px 0; }
-    .meta-row b { color: #e7efff; }
+    .meta-left { min-width:240px; }
+    .meta-row { font-size:13px; color:var(--muted); margin:3px 0; }
+    .meta-row b { color:#e7efff; }
 
-    .chat-body {
-      padding: 16px;
-      overflow: auto;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.01), transparent),
-        rgba(10,16,34,.5);
-    }
-
+    .chat-body { padding:16px; overflow:auto; background: rgba(10,16,34,.5); }
     .bubble {
-      max-width: 85%;
-      padding: 12px 13px;
-      border-radius: 14px;
-      margin: 10px 0;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      word-break: break-word;
-      border: 1px solid transparent;
+      max-width:85%; padding:12px 13px; border-radius:14px; margin:10px 0;
+      line-height:1.45; white-space:pre-wrap; word-break:break-word;
+      border:1px solid transparent;
     }
+    .bubble.user { background:#182859; border-color:#2c448f; border-top-left-radius:6px; }
+    .bubble.ai { margin-left:auto; background:#12352f; border-color:#26685d; border-top-right-radius:6px; }
 
-    .bubble.user {
-      background: #182859;
-      border-color: #2c448f;
-      border-top-left-radius: 6px;
+    .composer { border-top:1px solid var(--border); padding:12px; background:#0f1730; }
+    textarea {
+      width:100%; min-height:110px; resize:vertical; background:#0d1430; color:var(--text);
+      border:1px solid #2c3f80; border-radius:12px; padding:10px 12px; outline:none; font:inherit;
     }
+    textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(110,168,254,.15); }
 
-    .bubble.ai {
-      margin-left: auto;
-      background: #12352f;
-      border-color: #26685d;
-      border-top-right-radius: 6px;
-    }
-
-    .composer {
-      border-top: 1px solid var(--border);
-      padding: 12px;
-      background: #0f1730;
-    }
-
-    .composer textarea {
-      width: 100%;
-      min-height: 110px;
-      resize: vertical;
-      background: #0d1430;
-      color: var(--text);
-      border: 1px solid #2c3f80;
-      border-radius: 12px;
-      padding: 10px 12px;
-      outline: none;
-      font: inherit;
-      line-height: 1.4;
-    }
-
-    .composer textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(110,168,254,.15);
-    }
-
-    .actions {
-      margin-top: 10px;
-      display: flex;
-      gap: 10px;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .hint { color: var(--muted); font-size: 12px; }
+    .actions { margin-top:10px; display:flex; gap:10px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+    .hint { color:var(--muted); font-size:12px; }
 
     .btn {
-      border: 1px solid #2f4287;
-      background: #1a2a61;
-      color: #e9eeff;
-      border-radius: 10px;
-      padding: 9px 14px;
-      cursor: pointer;
-      font-weight: 700;
-      transition: .15s ease;
+      border:1px solid #2f4287; background:#1a2a61; color:#e9eeff;
+      border-radius:10px; padding:9px 14px; cursor:pointer; font-weight:700;
     }
+    .btn.primary { border-color:#3a74ff; background:linear-gradient(180deg,#3c79ff,#2b61dd); }
+    .btn:disabled { opacity:.55; cursor:not-allowed; }
 
-    .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
-    .btn.primary {
-      border-color: #3a74ff;
-      background: linear-gradient(180deg, #3c79ff, #2b61dd);
-    }
-
-    .btn:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .empty {
-      color: var(--muted);
-      text-align: center;
-      padding: 36px 16px;
-    }
+    .empty { color:var(--muted); text-align:center; padding:36px 16px; }
 
     @media (max-width: 940px) {
-      .grid { grid-template-columns: 1fr; }
-      .list { max-height: 260px; }
-      .chat-panel { min-height: 62vh; }
+      .grid { grid-template-columns:1fr; }
+      .list { max-height:260px; }
+      .chat-panel { min-height:62vh; }
     }
   </style>
 </head>
@@ -305,13 +169,13 @@
       </div>
 
       <div class="card chat-panel">
-        <div class="chat-meta" id="chatMeta">
+        <div class="chat-meta">
           <div class="meta-left">
             <div class="meta-row"><b>ID:</b> <span id="metaId">—</span></div>
             <div class="meta-row"><b>Model:</b> <span id="metaModel">—</span></div>
             <div class="meta-row"><b>Received:</b> <span id="metaTime">—</span></div>
           </div>
-          <div class="muted">Select a pending item to reply</div>
+          <div class="muted" id="metaHint">Select a pending item to reply</div>
         </div>
 
         <div class="chat-body" id="chatBody">
@@ -339,17 +203,16 @@
     const replyBox = document.getElementById("replyBox");
     const sendBtn = document.getElementById("sendBtn");
     const clearBtn = document.getElementById("clearBtn");
-
     const metaId = document.getElementById("metaId");
     const metaModel = document.getElementById("metaModel");
     const metaTime = document.getElementById("metaTime");
-
+    const metaHint = document.getElementById("metaHint");
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
 
-    const items = new Map(); // id -> { id, model, prompt, created_at, answered }
+    const items = new Map();
     let selectedId = null;
-    let ws;
+    let ws = null;
 
     function esc(s) {
       return String(s ?? "")
@@ -359,24 +222,24 @@
     }
 
     function fmtTime(iso) {
-      try { return new Date(iso).toLocaleString(); }
-      catch { return iso || "—"; }
+      try { return new Date(iso).toLocaleString(); } catch { return iso || "—"; }
     }
 
-    function setConnected(isConnected) {
-      statusDot.classList.toggle("connected", isConnected);
-      statusText.textContent = isConnected ? "Connected" : "Disconnected";
+    function setConnected(v) {
+      statusDot.classList.toggle("connected", v);
+      statusText.textContent = v ? "Connected" : "Disconnected";
+      metaHint.textContent = v ? "Select a pending item to reply" : "WebSocket disconnected. Reconnecting…";
     }
 
     function renderList() {
       const arr = [...items.values()]
         .filter(i => !i.answered)
-        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+        .sort((a,b) => (a.created_at < b.created_at ? 1 : -1));
 
       pendingCount.textContent = String(arr.length);
       requestList.innerHTML = "";
 
-      if (arr.length === 0) {
+      if (!arr.length) {
         requestList.innerHTML = `<div class="empty">No pending messages.</div>`;
         return;
       }
@@ -419,10 +282,11 @@
         ${item.answer ? `<div class="bubble ai">${esc(item.answer)}</div>` : ""}
       `;
 
-      replyBox.disabled = !!item.answered;
-      sendBtn.disabled = !!item.answered;
-      clearBtn.disabled = !!item.answered;
-      if (!item.answered) replyBox.focus();
+      const disabled = !!item.answered;
+      replyBox.disabled = disabled;
+      sendBtn.disabled = disabled;
+      clearBtn.disabled = disabled;
+      if (!disabled) replyBox.focus();
     }
 
     function selectItem(id) {
@@ -433,6 +297,7 @@
 
     function addIncoming(data) {
       if (!data || !data.id) return;
+
       items.set(data.id, {
         id: data.id,
         model: data.model || "uno-reverse",
@@ -442,7 +307,6 @@
         answer: ""
       });
 
-      // Auto-select newest if nothing selected
       if (!selectedId) selectedId = data.id;
       renderList();
       renderChat(items.get(selectedId));
@@ -454,10 +318,7 @@
       item.answered = true;
       item.answer = content;
       items.set(id, item);
-
-      if (selectedId === id) {
-        renderChat(item);
-      }
+      if (selectedId === id) renderChat(item);
       renderList();
     }
 
@@ -465,15 +326,7 @@
       if (!selectedId || !ws || ws.readyState !== WebSocket.OPEN) return;
       const content = replyBox.value.trim();
       if (!content) return alert("Reply cannot be empty.");
-
-      sendBtn.disabled = true;
-      clearBtn.disabled = true;
-
-      ws.send(JSON.stringify({
-        type: "reply",
-        id: selectedId,
-        content
-      }));
+      ws.send(JSON.stringify({ type: "reply", id: selectedId, content }));
     }
 
     sendBtn.addEventListener("click", sendReply);
@@ -484,14 +337,24 @@
 
     function connectWS() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}`);
+      const wsUrl = `${proto}://${location.host}`;
+      ws = new WebSocket(wsUrl);
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        console.log("WS connected:", wsUrl);
+        setConnected(true);
+      };
+
       ws.onclose = () => {
+        console.log("WS disconnected, retrying...");
         setConnected(false);
         setTimeout(connectWS, 1200);
       };
-      ws.onerror = () => setConnected(false);
+
+      ws.onerror = (e) => {
+        console.error("WS error:", e);
+        setConnected(false);
+      };
 
       ws.onmessage = (evt) => {
         let msg;
@@ -511,7 +374,6 @@
 
         if (msg.type === "answered") {
           markAnswered(msg.id, msg.content || "");
-          // auto-select next pending
           if (selectedId === msg.id) {
             const next = [...items.values()].find(i => !i.answered);
             selectedId = next ? next.id : null;
@@ -536,8 +398,6 @@
 
         if (msg.type === "error") {
           alert(msg.message || "Unknown WebSocket error");
-          sendBtn.disabled = false;
-          clearBtn.disabled = false;
         }
       };
     }
