@@ -8,7 +8,7 @@ const bodyParser = require("body-parser");
 // -------------------------
 // Config
 // -------------------------
-const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11434);
+const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11435);
 const PANEL_PORT = Number(process.env.PANEL_PORT || 6741);
 const TIMEOUT_SECONDS = Number(process.env.UNO_REVERSE_TIMEOUT_SECONDS || 300);
 
@@ -46,14 +46,12 @@ function extractPromptFromBody(body) {
   if (typeof body.prompt === "string" && body.prompt.trim()) return body.prompt;
 
   if (Array.isArray(body.messages) && body.messages.length > 0) {
-    // Prefer latest user message content
     for (let i = body.messages.length - 1; i >= 0; i--) {
       const m = body.messages[i];
       if (m && m.role === "user" && typeof m.content === "string" && m.content.trim()) {
         return m.content;
       }
     }
-    // Fallback: latest content from any role
     for (let i = body.messages.length - 1; i >= 0; i--) {
       const m = body.messages[i];
       if (m && typeof m.content === "string" && m.content.trim()) return m.content;
@@ -66,12 +64,17 @@ function ndjsonWrite(res, obj) {
   res.write(`${JSON.stringify(obj)}\n`);
 }
 
+function log(...args) {
+  console.log(`[${nowIso()}]`, ...args);
+}
+
 // -------------------------
 // Control Panel Server (6741)
 // -------------------------
 const panelApp = express();
 panelApp.use(cors());
 panelApp.use(express.static(path.join(__dirname, "public")));
+
 panelApp.get("/health", (_req, res) => {
   res.json({ ok: true, service: "control-panel", time: nowIso() });
 });
@@ -81,17 +84,24 @@ const wss = new WebSocket.Server({ server: panelServer });
 
 function broadcast(messageObj) {
   const payload = JSON.stringify(messageObj);
+  let sent = 0;
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(payload);
+      sent += 1;
     }
   }
+  log(`WS broadcast type=${messageObj.type} sent_to=${sent} clients_total=${wss.clients.size}`);
 }
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  const ip = req?.socket?.remoteAddress || "unknown";
+  log(`WS client connected from ${ip}. total_clients=${wss.clients.size}`);
+
   // Send currently pending list
   const list = Array.from(pending.values()).map((entry) => entry.meta);
   ws.send(JSON.stringify({ type: "pending_list", data: list }));
+  log(`Sent pending_list count=${list.length} to new WS client`);
 
   ws.on("message", (raw) => {
     let msg;
@@ -125,7 +135,6 @@ wss.on("connection", (ws) => {
     clearTimeout(entry.timer);
 
     try {
-      // Stream assistant content then done
       ndjsonWrite(entry.res, {
         model: entry.meta.model,
         created_at: nowIso(),
@@ -139,6 +148,7 @@ wss.on("connection", (ws) => {
         done: true
       });
       entry.res.end();
+      log(`Answered id=${id} content_len=${content.length}`);
     } catch (err) {
       console.error("Failed writing response stream:", err);
     }
@@ -152,14 +162,22 @@ wss.on("connection", (ws) => {
       answered_at: nowIso()
     });
   });
+
+  ws.on("close", () => {
+    log(`WS client disconnected. total_clients=${wss.clients.size}`);
+  });
+
+  ws.on("error", (err) => {
+    log(`WS client error: ${err.message}`);
+  });
 });
 
-panelServer.listen(PANEL_PORT, () => {
-  console.log(`🧠 Control panel: http://localhost:${PANEL_PORT}`);
+panelServer.listen(PANEL_PORT, "0.0.0.0", () => {
+  log(`🧠 Control panel: http://localhost:${PANEL_PORT}`);
 });
 
 // -------------------------
-// Fake Ollama Server (11434)
+// Fake Ollama Server (11435 default)
 // -------------------------
 const ollamaApp = express();
 ollamaApp.use(cors());
@@ -189,12 +207,26 @@ ollamaApp.get("/api/tags", (_req, res) => {
   });
 });
 
-// Also support /v1/models for compatibility
 ollamaApp.get("/v1/models", (_req, res) => {
   res.json({
     object: "list",
     data: [{ id: "uno-reverse", object: "model", created: Date.now(), owned_by: "uno-reverse" }]
   });
+});
+
+// Debug: inspect pending queue
+ollamaApp.get("/debug/pending", (_req, res) => {
+  const data = Array.from(pending.entries()).map(([id, entry]) => ({
+    id,
+    meta: entry.meta,
+    timerAlive: !!entry.timer
+  }));
+  res.json({ count: data.length, ws_clients: wss.clients.size, data });
+});
+
+// Debug: inspect ws client count
+ollamaApp.get("/debug/ws", (_req, res) => {
+  res.json({ ws_clients: wss.clients.size, time: nowIso() });
 });
 
 function handleGenerateLike(req, res) {
@@ -204,12 +236,13 @@ function handleGenerateLike(req, res) {
   const id = makeId();
   const createdAt = nowIso();
 
+  log(`Incoming request id=${id} path=${req.path} model=${model} prompt_len=${prompt.length}`);
+
   res.status(200);
   res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
 
-  // First chunk (heartbeat/meta)
   ndjsonWrite(res, {
     model,
     created_at: createdAt,
@@ -234,6 +267,7 @@ function handleGenerateLike(req, res) {
         done: true
       });
       res.end();
+      log(`Expired id=${id} after ${TIMEOUT_SECONDS}s`);
     } catch (err) {
       console.error("Timeout stream close error:", err);
     } finally {
@@ -243,34 +277,28 @@ function handleGenerateLike(req, res) {
   }, TIMEOUT_SECONDS * 1000);
 
   pending.set(id, { res, timer, meta });
+  log(`Pending added id=${id}. pending_count=${pending.size}`);
 
-  // Push incoming request to control panel
   broadcast({
     type: "incoming",
     ...meta
   });
 
-  // If client disconnects before operator replies
   req.on("close", () => {
-    // If still pending, clean up
     if (pending.has(id)) {
       clearTimeout(timer);
       pending.delete(id);
+      log(`Client disconnected before reply id=${id}. pending_count=${pending.size}`);
       broadcast({ type: "client_disconnected", id, at: nowIso() });
     }
   });
 }
 
 ollamaApp.post("/api/generate", handleGenerateLike);
-
-// Compatibility alias: chat completions-style path
 ollamaApp.post("/api/chat/completions", handleGenerateLike);
-
-// OpenAI-ish compatibility endpoint
 ollamaApp.post("/v1/chat/completions", handleGenerateLike);
 
-ollamaApp.listen(OLLAMA_PORT, () => {
-  console.log(`🤖 Fake Ollama API: http://localhost:${OLLAMA_PORT}`);
-  console.log(`⏱️ Timeout: ${TIMEOUT_SECONDS}s`);
+ollamaApp.listen(OLLAMA_PORT, "0.0.0.0", () => {
+  log(`🤖 Fake Ollama API: http://localhost:${OLLAMA_PORT}`);
+  log(`⏱️ Timeout: ${TIMEOUT_SECONDS}s`);
 });
-6
