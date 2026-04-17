@@ -5,9 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "install:app": "npm ci",
-    "uninstall:app": "node -e \"const fs=require('fs'); const p=['node_modules','package-lock.json']; p.forEach(x=>{ try{fs.rmSync(x,{recursive:true,force:true}); console.log('Removed',x);}catch(e){console.log('Skip',x);} }); console.log('Uno-reverse dependencies removed.');\"",
-    "update:app": "npm update && npm audit fix || true"
+    "install:app": "bash scripts/install.sh",
+    "uninstall:app": "bash scripts/uninstall.sh",
+    "update:app": "bash scripts/update.sh"
   },
   "dependencies": {
     "body-parser": "^1.20.2",
