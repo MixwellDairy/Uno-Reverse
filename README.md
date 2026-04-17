@@ -42,9 +42,12 @@ chmod +x scripts/install.sh scripts/uninstall.sh scripts/update.sh
 npm run install:app
 ```
 
-### 4) Start app
+### 4) Start app in bg
 ```bash
-npm start
+cd ~/uno-reverse
+# use custom ports if needed:
+OLLAMA_PORT=11435 PANEL_PORT=6741 nohup npm start > uno-reverse.log 2>&1 &
+echo $!   # prints the background process id (PID)
 ```
 
 You should see:
