@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>uno-reverse · Control Panel</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a33;
+      --panel-2: #0f1730;
+      --text: #e9eeff;
+      --muted: #9eb0e0;
+      --accent: #6ea8fe;
+      --accent-2: #7ef0c2;
+      --warn: #ffcc66;
+      --danger: #ff7a7a;
+      --ok: #72e39a;
+      --border: #25315f;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 20% -10%, #243a78 0%, transparent 60%),
+        radial-gradient(1000px 500px at 100% 0%, #19495a 0%, transparent 60%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .wrap { max-width: 1200px; margin: 28px auto; padding: 0 16px 32px; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      background: rgba(18, 26, 51, 0.85);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .logo {
+      width: 36px; height: 36px;
+      display: grid; place-items: center;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #0a122a;
+      font-weight: 900;
+    }
+
+    .title { font-size: 1.08rem; font-weight: 700; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; }
+
+    .status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .dot {
+      width: 10px; height: 10px; border-radius: 999px;
+      background: var(--danger);
+      box-shadow: 0 0 0 4px rgba(255,122,122,.16);
+    }
+    .dot.connected {
+      background: var(--ok);
+      box-shadow: 0 0 0 4px rgba(114,227,154,.16);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: rgba(18, 26, 51, 0.9);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(180deg, rgba(255,255,255,.02), transparent);
+    }
+
+    .muted { color: var(--muted); font-weight: 500; font-size: .88rem; }
+    .count-pill {
+      background: #1d2a56;
+      color: #cfe0ff;
+      border: 1px solid #2f4287;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+
+    .list {
+      max-height: calc(100vh - 190px);
+      overflow: auto;
+      padding: 8px;
+    }
+
+    .item {
+      border: 1px solid #28386f;
+      background: #111a39;
+      border-radius: 12px;
+      padding: 10px;
+      margin: 8px 0;
+      cursor: pointer;
+      transition: .15s ease;
+    }
+
+    .item:hover { transform: translateY(-1px); border-color: #3e59b8; }
+    .item.active { border-color: var(--accent); background: #16214a; }
+    .item.answered { opacity: .6; }
+
+    .item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .item-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #a9bfff;
+      font-size: 12px;
+    }
+
+    .item-time { color: var(--muted); font-size: 12px; }
+    .item-prompt {
+      color: #dbe6ff;
+      font-size: 13px;
+      line-height: 1.35;
+      max-height: 54px;
+      overflow: hidden;
+    }
+
+    .chat-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100vh - 190px);
+    }
+
+    .chat-meta {
+      padding: 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: rgba(15, 23, 48, .6);
+    }
+
+    .meta-left { min-width: 240px; }
+    .meta-row { font-size: 13px; color: var(--muted); margin: 3px 0; }
+    .meta-row b { color: #e7efff; }
+
+    .chat-body {
+      padding: 16px;
+      overflow: auto;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.01), transparent),
+        rgba(10,16,34,.5);
+    }
+
+    .bubble {
+      max-width: 85%;
+      padding: 12px 13px;
+      border-radius: 14px;
+      margin: 10px 0;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid transparent;
+    }
+
+    .bubble.user {
+      background: #182859;
+      border-color: #2c448f;
+      border-top-left-radius: 6px;
+    }
+
+    .bubble.ai {
+      margin-left: auto;
+      background: #12352f;
+      border-color: #26685d;
+      border-top-right-radius: 6px;
+    }
+
+    .composer {
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      background: #0f1730;
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      background: #0d1430;
+      color: var(--text);
+      border: 1px solid #2c3f80;
+      border-radius: 12px;
+      padding: 10px 12px;
+      outline: none;
+      font: inherit;
+      line-height: 1.4;
+    }
+
+    .composer textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(110,168,254,.15);
+    }
+
+    .actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .hint { color: var(--muted); font-size: 12px; }
+
+    .btn {
+      border: 1px solid #2f4287;
+      background: #1a2a61;
+      color: #e9eeff;
+      border-radius: 10px;
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: .15s ease;
+    }
+
+    .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .btn.primary {
+      border-color: #3a74ff;
+      background: linear-gradient(180deg, #3c79ff, #2b61dd);
+    }
+
+    .btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 36px 16px;
+    }
+
+    @media (max-width: 940px) {
+      .grid { grid-template-columns: 1fr; }
+      .list { max-height: 260px; }
+      .chat-panel { min-height: 62vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="logo">↺</div>
+      <div>
+        <div class="title">uno-reverse control panel</div>
+        <div class="subtitle">You are the AI. Incoming requests appear here in real-time.</div>
+      </div>
+      <div class="status">
+        <div id="statusDot" class="dot"></div>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <span>Pending requests</span>
+          <span class="count-pill" id="pendingCount">0</span>
+        </div>
+        <div id="requestList" class="list"></div>
+      </div>
+
+      <div class="card chat-panel">
+        <div class="chat-meta" id="chatMeta">
+          <div class="meta-left">
+            <div class="meta-row"><b>ID:</b> <span id="metaId">—</span></div>
+            <div class="meta-row"><b>Model:</b> <span id="metaModel">—</span></div>
+            <div class="meta-row"><b>Received:</b> <span id="metaTime">—</span></div>
+          </div>
+          <div class="muted">Select a pending item to reply</div>
+        </div>
+
+        <div class="chat-body" id="chatBody">
+          <div class="empty">No request selected.</div>
+        </div>
+
+        <div class="composer">
+          <textarea id="replyBox" placeholder="Type your response as the AI..." disabled></textarea>
+          <div class="actions">
+            <div class="hint">Tip: Ctrl/Cmd + Enter to send</div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn" id="clearBtn" disabled>Clear</button>
+              <button class="btn primary" id="sendBtn" disabled>Send reply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const requestList = document.getElementById("requestList");
+    const pendingCount = document.getElementById("pendingCount");
+    const chatBody = document.getElementById("chatBody");
+    const replyBox = document.getElementById("replyBox");
+    const sendBtn = document.getElementById("sendBtn");
+    const clearBtn = document.getElementById("clearBtn");
+
+    const metaId = document.getElementById("metaId");
+    const metaModel = document.getElementById("metaModel");
+    const metaTime = document.getElementById("metaTime");
+
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+
+    const items = new Map(); // id -> { id, model, prompt, created_at, answered }
+    let selectedId = null;
+    let ws;
+
+    function esc(s) {
+      return String(s ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function fmtTime(iso) {
+      try { return new Date(iso).toLocaleString(); }
+      catch { return iso || "—"; }
+    }
+
+    function setConnected(isConnected) {
+      statusDot.classList.toggle("connected", isConnected);
+      statusText.textContent = isConnected ? "Connected" : "Disconnected";
+    }
+
+    function renderList() {
+      const arr = [...items.values()]
+        .filter(i => !i.answered)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+      pendingCount.textContent = String(arr.length);
+      requestList.innerHTML = "";
+
+      if (arr.length === 0) {
+        requestList.innerHTML = `<div class="empty">No pending messages.</div>`;
+        return;
+      }
+
+      for (const item of arr) {
+        const el = document.createElement("div");
+        el.className = "item" + (item.id === selectedId ? " active" : "");
+        el.innerHTML = `
+          <div class="item-top">
+            <div class="item-id">${esc(item.id)}</div>
+            <div class="item-time">${esc(fmtTime(item.created_at))}</div>
+          </div>
+          <div class="muted" style="margin-bottom:6px;">model: ${esc(item.model || "uno-reverse")}</div>
+          <div class="item-prompt">${esc(item.prompt || "(empty prompt)")}</div>
+        `;
+        el.onclick = () => selectItem(item.id);
+        requestList.appendChild(el);
+      }
+    }
+
+    function renderChat(item) {
+      if (!item) {
+        chatBody.innerHTML = `<div class="empty">No request selected.</div>`;
+        metaId.textContent = "—";
+        metaModel.textContent = "—";
+        metaTime.textContent = "—";
+        replyBox.value = "";
+        replyBox.disabled = true;
+        sendBtn.disabled = true;
+        clearBtn.disabled = true;
+        return;
+      }
+
+      metaId.textContent = item.id;
+      metaModel.textContent = item.model || "uno-reverse";
+      metaTime.textContent = fmtTime(item.created_at);
+
+      chatBody.innerHTML = `
+        <div class="bubble user">${esc(item.prompt || "(empty prompt)")}</div>
+        ${item.answer ? `<div class="bubble ai">${esc(item.answer)}</div>` : ""}
+      `;
+
+      replyBox.disabled = !!item.answered;
+      sendBtn.disabled = !!item.answered;
+      clearBtn.disabled = !!item.answered;
+      if (!item.answered) replyBox.focus();
+    }
+
+    function selectItem(id) {
+      selectedId = id;
+      renderList();
+      renderChat(items.get(id));
+    }
+
+    function addIncoming(data) {
+      if (!data || !data.id) return;
+      items.set(data.id, {
+        id: data.id,
+        model: data.model || "uno-reverse",
+        prompt: data.prompt || "",
+        created_at: data.created_at || new Date().toISOString(),
+        answered: false,
+        answer: ""
+      });
+
+      // Auto-select newest if nothing selected
+      if (!selectedId) selectedId = data.id;
+      renderList();
+      renderChat(items.get(selectedId));
+    }
+
+    function markAnswered(id, content = "") {
+      const item = items.get(id);
+      if (!item) return;
+      item.answered = true;
+      item.answer = content;
+      items.set(id, item);
+
+      if (selectedId === id) {
+        renderChat(item);
+      }
+      renderList();
+    }
+
+    function sendReply() {
+      if (!selectedId || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const content = replyBox.value.trim();
+      if (!content) return alert("Reply cannot be empty.");
+
+      sendBtn.disabled = true;
+      clearBtn.disabled = true;
+
+      ws.send(JSON.stringify({
+        type: "reply",
+        id: selectedId,
+        content
+      }));
+    }
+
+    sendBtn.addEventListener("click", sendReply);
+    clearBtn.addEventListener("click", () => { replyBox.value = ""; replyBox.focus(); });
+    replyBox.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") sendReply();
+    });
+
+    function connectWS() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}`);
+
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        setTimeout(connectWS, 1200);
+      };
+      ws.onerror = () => setConnected(false);
+
+      ws.onmessage = (evt) => {
+        let msg;
+        try { msg = JSON.parse(evt.data); } catch { return; }
+
+        if (msg.type === "pending_list" && Array.isArray(msg.data)) {
+          for (const it of msg.data) addIncoming(it);
+          renderList();
+          renderChat(items.get(selectedId));
+          return;
+        }
+
+        if (msg.type === "incoming") {
+          addIncoming(msg);
+          return;
+        }
+
+        if (msg.type === "answered") {
+          markAnswered(msg.id, msg.content || "");
+          // auto-select next pending
+          if (selectedId === msg.id) {
+            const next = [...items.values()].find(i => !i.answered);
+            selectedId = next ? next.id : null;
+            replyBox.value = "";
+            renderList();
+            renderChat(selectedId ? items.get(selectedId) : null);
+          }
+          return;
+        }
+
+        if (msg.type === "expired" || msg.type === "client_disconnected") {
+          markAnswered(msg.id, msg.type === "expired" ? "[expired]" : "[client disconnected]");
+          if (selectedId === msg.id) {
+            const next = [...items.values()].find(i => !i.answered);
+            selectedId = next ? next.id : null;
+            replyBox.value = "";
+            renderList();
+            renderChat(selectedId ? items.get(selectedId) : null);
+          }
+          return;
+        }
+
+        if (msg.type === "error") {
+          alert(msg.message || "Unknown WebSocket error");
+          sendBtn.disabled = false;
+          clearBtn.disabled = false;
+        }
+      };
+    }
+
+    connectWS();
+  </script>
+</body>
+</html>
