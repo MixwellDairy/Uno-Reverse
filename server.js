@@ -40,6 +40,21 @@ function safeString(value) {
   }
 }
 
+function extractMessageText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      if (typeof part.text === "string") return part.text;
+      if (typeof part.content === "string") return part.content;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
 function extractPromptFromBody(body) {
   if (!body || typeof body !== "object") return "";
   if (typeof body.prompt === "string" && body.prompt.trim()) return body.prompt;
@@ -47,12 +62,115 @@ function extractPromptFromBody(body) {
   if (Array.isArray(body.messages) && body.messages.length > 0) {
     for (let i = body.messages.length - 1; i >= 0; i--) {
       const m = body.messages[i];
-      if (m && m.role === "user" && typeof m.content === "string" && m.content.trim()) {
+      if (!m || m.role !== "user") continue;
+      if (typeof m.content === "string" && m.content.trim()) {
         return m.content;
       }
+      const text = extractMessageText(m.content);
+      if (text) return text;
     }
   }
   return "";
+}
+
+function extractAttachmentsFromBody(body) {
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return [];
+  const attachments = [];
+  for (const msg of body.messages) {
+    const content = msg && msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const type = safeString(part.type || "attachment");
+      if (type === "text") continue;
+      const name = safeString(part.name || part.filename || part.title || type).slice(0, 200) || "attachment";
+      attachments.push({ type, name });
+    }
+  }
+  return attachments.slice(0, 20);
+}
+
+function parseChatContextFromPrompt(prompt) {
+  const text = safeString(prompt);
+  const section = /###\s*Chat History:\s*([\s\S]*)$/i.exec(text);
+  if (!section) return "";
+  return section[1].trim().slice(0, 4000);
+}
+
+function isTitleSystemPrompt(prompt) {
+  const text = safeString(prompt);
+  if (!text) return false;
+  return (
+    /generate\s+a\s+concise,\s*3-5\s+word\s+title\s+with\s+an\s+emoji/i.test(text) ||
+    /json\s+format:\s*\{\s*"title"\s*:/i.test(text)
+  );
+}
+
+function getMessageTexts(body) {
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return [];
+  return body.messages
+    .map((m) => extractMessageText(m && m.content))
+    .map((text) => safeString(text).trim())
+    .filter(Boolean);
+}
+
+function findTitlePromptText(body, prompt) {
+  if (isTitleSystemPrompt(prompt)) return prompt;
+  const texts = getMessageTexts(body);
+  return texts.find((text) => isTitleSystemPrompt(text)) || "";
+}
+
+function suggestTitle(context) {
+  const text = safeString(context).toLowerCase();
+  if (!text) return "💬 Chat Summary";
+  if (/\b(hello|hi|hey|greetings)\b/.test(text)) return "👋 Friendly Greeting";
+  if (/\b(error|bug|fix|issue|404|500)\b/.test(text)) return "🛠️ Debugging Session";
+  if (/\b(code|pull request|pr|repo|github|commit)\b/.test(text)) return "💻 Dev Workflow Notes";
+  if (/\b(image|photo|picture)\b/.test(text)) return "🖼️ Shared Image Notes";
+  if (/\b(file|document|pdf|attachment)\b/.test(text)) return "📎 File Discussion";
+  return "📝 Chat Title Draft";
+}
+
+function normalizeTitleReply(content, fallbackTitle) {
+  const text = safeString(content).trim();
+  if (!text) return JSON.stringify({ title: fallbackTitle });
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed.title === "string" && parsed.title.trim()) {
+      return JSON.stringify({ title: parsed.title.trim() });
+    }
+  } catch {
+    // operator entered plain markdown/text
+  }
+  return JSON.stringify({ title: text });
+}
+
+function createRequestMeta(id, model, prompt, body, createdAt) {
+  const titlePrompt = findTitlePromptText(body, prompt);
+  const isTitleRequest = Boolean(titlePrompt);
+  if (!isTitleRequest) {
+    return { id, model, prompt, created_at: createdAt, kind: "chat", title_request: null };
+  }
+
+  const context = parseChatContextFromPrompt(titlePrompt);
+  return {
+    id,
+    model,
+    prompt: "Set a concise chat title in Markdown.",
+    created_at: createdAt,
+    kind: "title_request",
+    title_request: {
+      instruction: "Set a concise 3-5 word title (emoji optional).",
+      context,
+      attachments: extractAttachmentsFromBody(body),
+      suggested_title: suggestTitle(context || titlePrompt)
+    }
+  };
+}
+
+function normalizeReplyForEntry(entry, content) {
+  if (!entry || !entry.meta || entry.meta.kind !== "title_request") return content;
+  return normalizeTitleReply(content, entry.meta.title_request?.suggested_title || "💬 Chat Summary");
 }
 
 function ndjsonWrite(res, obj) {
@@ -111,10 +229,11 @@ wss.on("connection", (ws) => {
     clearTimeout(entry.timer);
 
     try {
+      const finalContent = normalizeReplyForEntry(entry, content);
       ndjsonWrite(entry.res, {
         model: entry.meta.model,
         created_at: nowIso(),
-        response: content,
+        response: finalContent,
         done: false
       });
       ndjsonWrite(entry.res, {
@@ -210,7 +329,7 @@ function handleGenerateLike(req, res) {
 
   ndjsonWrite(res, { model, created_at: createdAt, response: "", done: false });
 
-  const meta = { id, model, prompt, created_at: createdAt };
+  const meta = createRequestMeta(id, model, prompt, body, createdAt);
 
   const timer = setTimeout(() => {
     try {
@@ -239,8 +358,12 @@ function handleGenerateLike(req, res) {
 }
 
 ollamaApp.post("/api/generate", handleGenerateLike);
+ollamaApp.post("/api/chat", handleGenerateLike);
 ollamaApp.post("/api/chat/completions", handleGenerateLike);
 ollamaApp.post("/v1/chat/completions", handleGenerateLike);
+ollamaApp.post("/api/ps", (_req, res) => {
+  res.json({ ok: true, service: "prompt-service", status: "stub", time: nowIso() });
+});
 
 ollamaApp.listen(OLLAMA_PORT, "0.0.0.0", () => {
   log(`🤖 Fake Ollama API: http://localhost:${OLLAMA_PORT}`);
