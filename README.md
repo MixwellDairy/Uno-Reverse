@@ -10,15 +10,18 @@ When a user sends a message to the fake model, it appears in your panel. You typ
 
 ---
 
-## System Prompt UX (OpenWebUI Title Requests)
+## System Prompt UX (OpenWebUI System Tasks)
 
-- OpenWebUI title/meta prompts (including `@generate_chat_title.json` flows) are detected and routed as **wrapped system tasks**.
-- Raw LLM system/meta instructions are **not shown** to the operator as normal chat text.
-- The control panel opens a dedicated **system task modal** with a Markdown editor, helper tools, and live preview.
-- Context and detected attachments are shown in the modal for reference.
-- Submitted title text is automatically wrapped by the backend to the required JSON shape:
-  - `{ "title": "## 📊 Analytics Summary" }`
-- The wrapper architecture is extensible so future system prompts (tags, summaries, etc.) can be added with their own UI/normalization handler without exposing raw meta prompts.
+- OpenWebUI system/meta prompts (including titles, follow-up questions, tags, and search query analysis) are automatically intercepted and routed as **wrapped system tasks**.
+- Supported types:
+  - **Title**: `{"title": "..."}`
+  - **Follow-up**: `{"follow_ups": ["...", "..."]}`
+  - **Tags**: `{"tags": ["...", "..."]}`
+  - **Search**: `{"queries": ["...", "..."]}`
+- Raw LLM instructions are **not shown** to the operator in the main chat. Instead, a dedicated **system task modal** appears.
+- The modal includes a Markdown editor, helper tools, live preview, and displays relevant chat context/attachments.
+- Submitted answers are automatically wrapped into the correct JSON format required by OpenWebUI.
+- All system prompt events are logged with `SYSTEM_PROMPT:` prefix for end-to-end traceability.
 
 ---
 
