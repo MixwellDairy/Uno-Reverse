@@ -80,13 +80,14 @@
     .composer { padding: 12px; border-top: 1px solid var(--border); }
     textarea {
       width: 100%;
-      height: 80px;
+      height: 100px;
       background: #0d1430;
       color: white;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px;
       font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial;
+      resize: vertical;
     }
     .btn {
       padding: 8px 16px;
@@ -98,7 +99,7 @@
       font-weight: bold;
     }
     .btn:disabled { opacity: 0.5; }
-    .toolbar { display:flex; gap:8px; margin: 8px 0; }
+    .toolbar { display:flex; gap:8px; margin: 8px 0; flex-wrap:wrap; }
     .toolbtn {
       border:1px solid var(--border);
       background:#1a254a;
@@ -107,6 +108,8 @@
       padding:6px 10px;
       cursor:pointer;
     }
+    .toolbtn:hover { background:#243060; }
+    .toolbar-sep { width:1px; background:var(--border); margin:2px 4px; align-self:stretch; display:inline-block; }
     .preview {
       margin-top: 10px;
       border:1px solid var(--border);
@@ -114,8 +117,14 @@
       background:#0f1735;
       padding:10px;
       min-height:46px;
+      max-height:180px;
+      overflow-y:auto;
     }
     .preview h1, .preview h2, .preview h3 { margin: 0.4em 0; }
+    .preview code { background:#1e2a4a; padding:2px 5px; border-radius:4px; font-family:monospace; font-size:0.9em; }
+    .preview blockquote { border-left:3px solid var(--accent); margin:4px 0; padding-left:10px; color:var(--muted); }
+    .preview hr { border:none; border-top:1px solid var(--border); margin:8px 0; }
+    .preview li { margin:2px 0 2px 18px; display:list-item; list-style-type:disc; }
     .context-block {
       margin-top: 8px;
       border: 1px solid var(--border);
@@ -181,10 +190,19 @@
       <div class="card">
         <div id="chat" class="chat-body" style="display:flex; flex-direction:column"></div>
         <div class="composer">
-          <div id="titleTools" class="toolbar" style="display:none">
-            <button class="toolbtn" data-insert="## " type="button">H2</button>
-            <button class="toolbtn" data-wrap="**" type="button"><strong>B</strong></button>
-            <button class="toolbtn" data-insert="✨ " type="button">Emoji</button>
+          <div id="chatTools" class="toolbar" style="display:none">
+            <button class="toolbtn" data-insert="# " type="button" title="Heading 1">H1</button>
+            <button class="toolbtn" data-insert="## " type="button" title="Heading 2">H2</button>
+            <button class="toolbtn" data-insert="### " type="button" title="Heading 3">H3</button>
+            <span class="toolbar-sep"></span>
+            <button class="toolbtn" data-wrap="**" type="button" title="Bold"><strong>B</strong></button>
+            <button class="toolbtn" data-wrap="*" type="button" title="Italic"><em>I</em></button>
+            <button class="toolbtn" data-wrap="`" type="button" title="Inline code" style="font-family:monospace;letter-spacing:-1px">Code</button>
+            <span class="toolbar-sep"></span>
+            <button class="toolbtn" data-insert="- " type="button" title="Bullet list">• List</button>
+            <button class="toolbtn" data-insert="&gt; " type="button" title="Blockquote">❝</button>
+            <button class="toolbtn" data-insert="---&#10;" type="button" title="Divider">—</button>
+            <button class="toolbtn" data-insert="✨ " type="button" title="Emoji">✨</button>
           </div>
           <textarea id="reply" placeholder="Type AI response..." disabled></textarea>
           <div id="mdPreview" class="preview" style="display:none"></div>
@@ -207,9 +225,15 @@
       <div id="wrapperModalContext" class="context-block"></div>
       <div id="wrapperModalAttachments" class="attachments"></div>
       <div id="wrapperTools" class="toolbar" style="display:none">
-        <button class="toolbtn" data-insert="## " type="button">H2</button>
-        <button class="toolbtn" data-wrap="**" type="button"><strong>B</strong></button>
-        <button class="toolbtn" data-insert="✨ " type="button">Emoji</button>
+        <button class="toolbtn" data-insert="# " type="button" title="Heading 1">H1</button>
+        <button class="toolbtn" data-insert="## " type="button" title="Heading 2">H2</button>
+        <button class="toolbtn" data-insert="### " type="button" title="Heading 3">H3</button>
+        <span class="toolbar-sep"></span>
+        <button class="toolbtn" data-wrap="**" type="button" title="Bold"><strong>B</strong></button>
+        <button class="toolbtn" data-wrap="*" type="button" title="Italic"><em>I</em></button>
+        <button class="toolbtn" data-wrap="`" type="button" title="Inline code" style="font-family:monospace;letter-spacing:-1px">Code</button>
+        <span class="toolbar-sep"></span>
+        <button class="toolbtn" data-insert="✨ " type="button" title="Emoji">✨</button>
       </div>
       <textarea id="wrapperReply" placeholder="Write response..." disabled></textarea>
       <div id="wrapperPreview" class="preview" style="display:none"></div>
@@ -226,7 +250,7 @@
     const countEl = document.getElementById('count');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const titleToolsEl = document.getElementById('titleTools');
+    const chatToolsEl = document.getElementById('chatTools');
     const mdPreviewEl = document.getElementById('mdPreview');
     const wrapperModalBackdropEl = document.getElementById('wrapperModalBackdrop');
     const wrapperModalTitleEl = document.getElementById('wrapperModalTitle');
@@ -255,13 +279,20 @@
     }
 
     function renderMarkdown(md) {
-      const escaped = escapeHtml(md || '');
-      return escaped
-        .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
-        .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
-        .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+      if (!md) return '';
+      // escapeHtml first (safe), then markdown transforms
+      // Note: > becomes &gt; after escapeHtml, so blockquote pattern matches &gt;
+      const s = escapeHtml(md);
+      return s
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/^---$/gm, '<hr>')
         .replace(/\n/g, '<br>');
     }
 
@@ -287,6 +318,13 @@
       }
       wrapperPreviewEl.style.display = 'block';
       wrapperPreviewEl.innerHTML = renderMarkdown(wrapperReplyEl.value.trim() || sel.wrapper?.suggested_value || '');
+    }
+
+    function updateChatPreview() {
+      const val = replyEl.value.trim();
+      if (!val || replyEl.disabled) { mdPreviewEl.style.display = 'none'; return; }
+      mdPreviewEl.style.display = 'block';
+      mdPreviewEl.innerHTML = renderMarkdown(val);
     }
 
     function wrapperRequestHtml(sel) {
@@ -367,6 +405,8 @@
           sendBtn.disabled = true;
           replyEl.value = '';
           replyEl.placeholder = 'Use the task modal for this system prompt';
+          chatToolsEl.style.display = 'none';
+          mdPreviewEl.style.display = 'none';
           if (wrapperModalOpenFor !== sel.id && wrapperModalDismissedFor !== sel.id) openWrapperModalForSelection();
         } else {
           wrapperModalDismissedFor = null;
@@ -374,6 +414,8 @@
           replyEl.disabled = false;
           sendBtn.disabled = false;
           replyEl.placeholder = 'Type AI response...';
+          chatToolsEl.style.display = 'flex';
+          updateChatPreview();
         }
       } else {
         chatEl.innerHTML = '<div style="text-align:center; margin-top:50px; opacity:0.5">Select a request</div>';
@@ -381,10 +423,11 @@
         replyEl.disabled = true;
         sendBtn.disabled = true;
         replyEl.value = '';
+        chatToolsEl.style.display = 'none';
+        mdPreviewEl.style.display = 'none';
       }
 
-      titleToolsEl.style.display = 'none';
-      mdPreviewEl.style.display = 'none';
+      titleToolsEl.style.display = chatToolsEl.style.display; // keep alias in sync
       const openBtn = document.getElementById('openWrapperTaskBtn');
       if (openBtn) openBtn.onclick = () => openWrapperModalForSelection(true);
     }
@@ -393,6 +436,7 @@
       if (selectedId !== id) wrapperModalDismissedFor = null;
       selectedId = id;
       replyEl.value = '';
+      mdPreviewEl.style.display = 'none';
       render();
     };
 
@@ -401,7 +445,19 @@
       if (!text || !selectedId) return;
       ws.send(JSON.stringify({ type: 'reply', id: selectedId, content: text }));
       replyEl.value = '';
+      mdPreviewEl.style.display = 'none';
     };
+
+    replyEl.addEventListener('input', updateChatPreview);
+
+    chatToolsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const insert = btn.getAttribute('data-insert');
+      const wrap = btn.getAttribute('data-wrap');
+      setSelectionText(replyEl, insert || '', wrap || '');
+      updateChatPreview();
+    });
 
     wrapperCloseEl.onclick = () => closeWrapperModal(true);
     wrapperModalBackdropEl.addEventListener('click', (e) => {

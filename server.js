@@ -233,6 +233,34 @@ function log(...args) {
   console.log(`[${nowIso()}]`, ...args);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Delay between word tokens when streaming a reply to the client (~15ms ≈ 60 words/sec)
+const STREAM_TOKEN_DELAY_MS = 15;
+
+async function streamContent(res, model, content) {
+  // Split into alternating word / whitespace tokens so spacing is preserved exactly
+  const tokens = content.split(/(\s+)/).filter(Boolean);
+  for (const token of tokens) {
+    try {
+      ndjsonWrite(res, { model, created_at: nowIso(), response: token, done: false });
+    } catch {
+      return;
+    }
+    if (token.trim()) {
+      await sleep(STREAM_TOKEN_DELAY_MS);
+    }
+  }
+  try {
+    ndjsonWrite(res, { model, created_at: nowIso(), response: "", done: true });
+    res.end();
+  } catch {
+    // client disconnected mid-stream
+  }
+}
+
 // -------------------------
 // Control Panel Server (6741)
 // -------------------------
@@ -260,7 +288,7 @@ wss.on("connection", (ws) => {
   const list = Array.from(pending.values()).map((entry) => entry.meta);
   ws.send(JSON.stringify({ type: "pending_list", data: list }));
 
-  ws.on("message", (raw) => {
+  ws.on("message", async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
@@ -280,27 +308,14 @@ wss.on("connection", (ws) => {
     if (!content && entry.meta.kind !== "wrapped_prompt") return;
 
     clearTimeout(entry.timer);
+    pending.delete(id);
 
     try {
       const finalContent = normalizeReplyForEntry(entry, content);
-      ndjsonWrite(entry.res, {
-        model: entry.meta.model,
-        created_at: nowIso(),
-        response: finalContent,
-        done: false
-      });
-      ndjsonWrite(entry.res, {
-        model: entry.meta.model,
-        created_at: nowIso(),
-        response: "",
-        done: true
-      });
-      entry.res.end();
+      await streamContent(entry.res, entry.meta.model, finalContent);
     } catch (err) {
       console.error("Failed writing response stream:", err);
     }
-
-    pending.delete(id);
 
     broadcast({
       type: "answered",
