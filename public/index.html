@@ -134,6 +134,34 @@
       font-size:12px;
       color: var(--muted);
     }
+    .muted { color: var(--muted); }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 18, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1000;
+    }
+    .modal {
+      width: min(860px, 100%);
+      max-height: 90vh;
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+    .modal textarea { height: 120px; }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
@@ -167,6 +195,29 @@
       </div>
     </div>
   </div>
+  <div id="wrapperModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div id="wrapperModalTitle" style="font-weight:700">System Task</div>
+          <div id="wrapperModalInstruction" class="muted" style="font-size:13px"></div>
+        </div>
+        <button id="wrapperClose" class="toolbtn" type="button">Close</button>
+      </div>
+      <div id="wrapperModalContext" class="context-block"></div>
+      <div id="wrapperModalAttachments" class="attachments"></div>
+      <div id="wrapperTools" class="toolbar" style="display:none">
+        <button class="toolbtn" data-insert="## " type="button">H2</button>
+        <button class="toolbtn" data-wrap="**" type="button"><strong>B</strong></button>
+        <button class="toolbtn" data-insert="✨ " type="button">Emoji</button>
+      </div>
+      <textarea id="wrapperReply" placeholder="Write response..." disabled></textarea>
+      <div id="wrapperPreview" class="preview" style="display:none"></div>
+      <div style="margin-top:8px; text-align:right">
+        <button id="wrapperSubmit" class="btn" disabled>Submit Task</button>
+      </div>
+    </div>
+  </div>
   <script>
     const listEl = document.getElementById('list');
     const chatEl = document.getElementById('chat');
@@ -177,9 +228,21 @@
     const statusText = document.getElementById('statusText');
     const titleToolsEl = document.getElementById('titleTools');
     const mdPreviewEl = document.getElementById('mdPreview');
+    const wrapperModalBackdropEl = document.getElementById('wrapperModalBackdrop');
+    const wrapperModalTitleEl = document.getElementById('wrapperModalTitle');
+    const wrapperModalInstructionEl = document.getElementById('wrapperModalInstruction');
+    const wrapperModalContextEl = document.getElementById('wrapperModalContext');
+    const wrapperModalAttachmentsEl = document.getElementById('wrapperModalAttachments');
+    const wrapperCloseEl = document.getElementById('wrapperClose');
+    const wrapperToolsEl = document.getElementById('wrapperTools');
+    const wrapperReplyEl = document.getElementById('wrapperReply');
+    const wrapperPreviewEl = document.getElementById('wrapperPreview');
+    const wrapperSubmitEl = document.getElementById('wrapperSubmit');
 
     let items = new Map();
     let selectedId = null;
+    let wrapperModalOpenFor = null;
+    let wrapperModalDismissedFor = null;
     let ws;
 
     function escapeHtml(str) {
@@ -202,48 +265,85 @@
         .replace(/\n/g, '<br>');
     }
 
-    function setSelectionText(insertText, wrapText) {
-      const start = replyEl.selectionStart || 0;
-      const end = replyEl.selectionEnd || 0;
-      const before = replyEl.value.slice(0, start);
-      const selected = replyEl.value.slice(start, end);
-      const after = replyEl.value.slice(end);
+    function setSelectionText(targetEl, insertText, wrapText) {
+      const start = targetEl.selectionStart || 0;
+      const end = targetEl.selectionEnd || 0;
+      const before = targetEl.value.slice(0, start);
+      const selected = targetEl.value.slice(start, end);
+      const after = targetEl.value.slice(end);
       if (wrapText) {
-        replyEl.value = `${before}${wrapText}${selected || 'text'}${wrapText}${after}`;
+        targetEl.value = `${before}${wrapText}${selected || 'text'}${wrapText}${after}`;
       } else {
-        replyEl.value = `${before}${insertText}${after}`;
+        targetEl.value = `${before}${insertText}${after}`;
       }
-      replyEl.focus();
-      updatePreview();
+      targetEl.focus();
     }
 
-    function updatePreview() {
+    function updateWrapperPreview() {
       const sel = items.get(selectedId);
-      if (!sel || sel.kind !== 'title_request') {
-        mdPreviewEl.style.display = 'none';
+      if (!sel || sel.kind !== 'wrapped_prompt' || sel.wrapper?.editor !== 'markdown') {
+        wrapperPreviewEl.style.display = 'none';
         return;
       }
-      mdPreviewEl.style.display = 'block';
-      mdPreviewEl.innerHTML = renderMarkdown(replyEl.value.trim() || sel.title_request?.suggested_title || '');
+      wrapperPreviewEl.style.display = 'block';
+      wrapperPreviewEl.innerHTML = renderMarkdown(wrapperReplyEl.value.trim() || sel.wrapper?.suggested_value || '');
     }
 
-    function titleRequestHtml(sel) {
-      const info = sel.title_request || {};
-      const context = info.context ? `<div class="context-block">${escapeHtml(info.context)}</div>` : '<div class="context-block">No chat context parsed. Use visible chat + uploads for context.</div>';
-      const attachments = Array.isArray(info.attachments) && info.attachments.length
-        ? `<div class="attachments">${info.attachments.map(a => `<span class="attachment">${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`).join('')}</div>`
-        : '<div class="attachments"><span class="attachment">No attachments</span></div>';
-
+    function wrapperRequestHtml(sel) {
+      const wrapper = sel.wrapper || {};
       return `
         <div class="bubble meta">
-          <div style="font-weight:700; margin-bottom:6px">📝 Set Chat Title</div>
-          <div>${escapeHtml(info.instruction || 'Write a concise title in Markdown. It will be sent as JSON.')}</div>
-          <div style="margin-top:8px; color:var(--muted)">Suggested: ${escapeHtml(info.suggested_title || '')}</div>
-          <div style="margin-top:8px; font-size:13px; color:var(--muted)">Chat context preview:</div>
-          ${context}
-          <div style="margin-top:8px; font-size:13px; color:var(--muted)">Attachments:</div>
-          ${attachments}
+          <div style="font-weight:700; margin-bottom:6px">${escapeHtml(wrapper.label || 'System task')}</div>
+          <div>${escapeHtml(wrapper.instruction || 'Complete this system task in the modal dialog.')}</div>
+          <div style="margin-top:8px; color:var(--muted)">Open the task modal to submit the response.</div>
+          <div style="margin-top:8px"><button id="openWrapperTaskBtn" class="toolbtn" type="button">Open Task Modal</button></div>
         </div>`;
+    }
+
+    function openWrapperModalForSelection(force = false) {
+      const sel = items.get(selectedId);
+      if (!sel || sel.kind !== 'wrapped_prompt') return;
+      if (!force && wrapperModalOpenFor === sel.id) return;
+      wrapperModalDismissedFor = null;
+
+      const wrapper = sel.wrapper || {};
+      wrapperModalOpenFor = sel.id;
+      wrapperModalBackdropEl.style.display = 'flex';
+      wrapperModalTitleEl.textContent = wrapper.label || 'System task';
+      wrapperModalInstructionEl.textContent = wrapper.instruction || 'Complete this system task.';
+      wrapperModalContextEl.textContent = wrapper.context || 'No chat context provided.';
+      wrapperModalAttachmentsEl.innerHTML = Array.isArray(wrapper.attachments) && wrapper.attachments.length
+        ? wrapper.attachments.map(a => `<span class="attachment">${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`).join('')
+        : '<span class="attachment">No attachments</span>';
+
+      if (wrapper.editor === 'markdown') {
+        wrapperToolsEl.style.display = 'flex';
+        wrapperPreviewEl.style.display = 'block';
+      } else {
+        wrapperToolsEl.style.display = 'none';
+        wrapperPreviewEl.style.display = 'none';
+      }
+
+      wrapperReplyEl.disabled = false;
+      wrapperSubmitEl.disabled = false;
+      wrapperReplyEl.placeholder = wrapper.type === 'title'
+        ? 'Write title in Markdown (e.g., ## 📊 Analytics Summary)'
+        : 'Write response...';
+      wrapperReplyEl.value = wrapper.suggested_value || '';
+      wrapperReplyEl.focus();
+      updateWrapperPreview();
+    }
+
+    function closeWrapperModal(markDismissed = false) {
+      if (markDismissed && selectedId) {
+        wrapperModalDismissedFor = selectedId;
+      }
+      wrapperModalBackdropEl.style.display = 'none';
+      wrapperModalOpenFor = null;
+      wrapperReplyEl.value = '';
+      wrapperReplyEl.disabled = true;
+      wrapperSubmitEl.disabled = true;
+      wrapperPreviewEl.style.display = 'none';
     }
 
     function render() {
@@ -252,42 +352,45 @@
       listEl.innerHTML = arr.map(i => `
         <div class="item ${i.id === selectedId ? 'active' : ''}" onclick="select('${i.id}')">
           <div style="font-size:12px; opacity:0.7">${i.id}</div>
-          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(i.kind === 'title_request' ? '📝 Chat title request' : i.prompt || '')}</div>
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(i.kind === 'wrapped_prompt' ? (i.wrapper?.label || 'System task') : (i.prompt || ''))}</div>
         </div>
       `).join('');
 
       const sel = items.get(selectedId);
       if (sel && !sel.done) {
-        chatEl.innerHTML = sel.kind === 'title_request'
-          ? titleRequestHtml(sel)
+        chatEl.innerHTML = sel.kind === 'wrapped_prompt'
+          ? wrapperRequestHtml(sel)
           : `<div class="bubble user">${escapeHtml(sel.prompt || '')}</div>`;
 
-        replyEl.disabled = false;
-        sendBtn.disabled = false;
-
-        if (sel.kind === 'title_request') {
-          titleToolsEl.style.display = 'flex';
-          if (!replyEl.value) {
-            replyEl.value = sel.title_request?.suggested_title || '';
-          }
-          replyEl.placeholder = 'Write title in Markdown (e.g., ## 📊 Analytics Summary)';
-          updatePreview();
+        if (sel.kind === 'wrapped_prompt') {
+          replyEl.disabled = true;
+          sendBtn.disabled = true;
+          replyEl.value = '';
+          replyEl.placeholder = 'Use the task modal for this system prompt';
+          if (wrapperModalOpenFor !== sel.id && wrapperModalDismissedFor !== sel.id) openWrapperModalForSelection();
         } else {
-          titleToolsEl.style.display = 'none';
-          mdPreviewEl.style.display = 'none';
+          wrapperModalDismissedFor = null;
+          closeWrapperModal();
+          replyEl.disabled = false;
+          sendBtn.disabled = false;
           replyEl.placeholder = 'Type AI response...';
         }
       } else {
         chatEl.innerHTML = '<div style="text-align:center; margin-top:50px; opacity:0.5">Select a request</div>';
+        closeWrapperModal();
         replyEl.disabled = true;
         sendBtn.disabled = true;
         replyEl.value = '';
-        titleToolsEl.style.display = 'none';
-        mdPreviewEl.style.display = 'none';
       }
+
+      titleToolsEl.style.display = 'none';
+      mdPreviewEl.style.display = 'none';
+      const openBtn = document.getElementById('openWrapperTaskBtn');
+      if (openBtn) openBtn.onclick = () => openWrapperModalForSelection(true);
     }
 
     window.select = (id) => {
+      if (selectedId !== id) wrapperModalDismissedFor = null;
       selectedId = id;
       replyEl.value = '';
       render();
@@ -298,18 +401,30 @@
       if (!text || !selectedId) return;
       ws.send(JSON.stringify({ type: 'reply', id: selectedId, content: text }));
       replyEl.value = '';
-      updatePreview();
     };
 
-    replyEl.addEventListener('input', updatePreview);
+    wrapperCloseEl.onclick = () => closeWrapperModal(true);
+    wrapperModalBackdropEl.addEventListener('click', (e) => {
+      if (e.target === wrapperModalBackdropEl) closeWrapperModal(true);
+    });
+    wrapperReplyEl.addEventListener('input', updateWrapperPreview);
 
-    titleToolsEl.addEventListener('click', (e) => {
+    wrapperToolsEl.addEventListener('click', (e) => {
       const btn = e.target.closest('button');
       if (!btn) return;
       const insert = btn.getAttribute('data-insert');
       const wrap = btn.getAttribute('data-wrap');
-      setSelectionText(insert || '', wrap || '');
+      setSelectionText(wrapperReplyEl, insert || '', wrap || '');
+      updateWrapperPreview();
     });
+
+    wrapperSubmitEl.onclick = () => {
+      const sel = items.get(selectedId);
+      if (!sel || sel.kind !== 'wrapped_prompt') return;
+      const text = wrapperReplyEl.value.trim();
+      ws.send(JSON.stringify({ type: 'reply', id: sel.id, content: text }));
+      closeWrapperModal();
+    };
 
     function connect() {
       ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
@@ -319,6 +434,7 @@
         const m = JSON.parse(e.data);
         if (m.type === 'pending_list') { m.data.forEach(i => items.set(i.id, { ...i, at: Date.now() })); }
         if (m.type === 'incoming') { items.set(m.id, { ...m, at: Date.now() }); if (!selectedId) selectedId = m.id; }
+        if (m.type === 'prompt_wrapper') { items.set(m.id, { ...m, at: Date.now() }); selectedId = m.id; }
         if (['answered', 'expired', 'client_disconnected'].includes(m.type)) {
           const it = items.get(m.id); if(it) it.done = true;
           if(selectedId === m.id) selectedId = [...items.values()].find(i => !i.done)?.id || null;

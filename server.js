@@ -97,27 +97,76 @@ function parseChatContextFromPrompt(prompt) {
   return section[1].trim().slice(0, 4000);
 }
 
+function parseChatContextFromMessages(body) {
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return "";
+  const lines = [];
+  for (const msg of body.messages) {
+    if (!msg || typeof msg !== "object") continue;
+    const role = safeString(msg.role || "message").toLowerCase();
+    if (role === "system") continue;
+    const text = safeString(extractMessageText(msg.content)).trim();
+    if (!text) continue;
+    lines.push(`${role}: ${text}`);
+  }
+  if (!lines.length) return "";
+  return lines.slice(-10).join("\n").slice(0, 4000);
+}
+
 function isTitleSystemPrompt(prompt) {
-  const text = safeString(prompt);
+  const text = safeString(prompt).trim();
   if (!text) return false;
+  const lower = text.toLowerCase();
+  if (/@generate_chat_title\.json/.test(lower)) return true;
   return (
-    /generate\s+a\s+concise,\s*3-5\s+word\s+title\s+with\s+an\s+emoji/i.test(text) ||
-    /json\s+format:\s*\{\s*"title"\s*:/i.test(text)
+    /generate\s+(a\s+)?concise[\s\S]{0,100}title[\s\S]{0,100}emoji/i.test(text) ||
+    /json\s+format[\s\S]{0,80}\{\s*"title"\s*:/i.test(text) ||
+    (/chat\s+history/i.test(text) && /return\s+.*json/i.test(text) && /"title"\s*:/.test(text))
   );
 }
 
-function getMessageTexts(body) {
+function getMessageEntries(body) {
   if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return [];
   return body.messages
-    .map((m) => extractMessageText(m && m.content))
-    .map((text) => safeString(text).trim())
-    .filter(Boolean);
+    .map((m) => ({
+      role: safeString(m && m.role).toLowerCase(),
+      text: extractMessageText(m && m.content)
+    }))
+    .map(({ role, text }) => ({ role, text: safeString(text).trim() }))
+    .filter((entry) => Boolean(entry.text));
 }
 
-function findTitlePromptText(body, prompt) {
-  if (isTitleSystemPrompt(prompt)) return prompt;
-  const texts = getMessageTexts(body);
-  return texts.find((text) => isTitleSystemPrompt(text)) || "";
+const SYSTEM_PROMPT_WRAPPERS = [
+  {
+    type: "title",
+    label: "📝 Chat title request",
+    editor: "markdown",
+    instruction: "Set a concise 3-5 word title (emoji optional).",
+    match: (text) => isTitleSystemPrompt(text),
+    buildPayload: (body, promptText) => {
+      const context = parseChatContextFromPrompt(promptText) || parseChatContextFromMessages(body);
+      return {
+        context,
+        attachments: extractAttachmentsFromBody(body),
+        suggested_value: suggestTitle(context || promptText),
+        response_schema: { title: "string" }
+      };
+    },
+    normalizeReply: (content, payload) => normalizeTitleReply(content, payload?.suggested_value || "💬 Chat Summary")
+  }
+];
+
+function findSystemPromptWrapper(body, prompt) {
+  const candidates = [{ role: "prompt", text: safeString(prompt) }, ...getMessageEntries(body)]
+    .map((entry) => ({ role: safeString(entry.role).toLowerCase(), text: safeString(entry.text).trim() }))
+    .filter((entry) => Boolean(entry.text));
+  for (const candidate of candidates) {
+    for (const wrapper of SYSTEM_PROMPT_WRAPPERS) {
+      if (wrapper.match(candidate.text, candidate.role)) {
+        return { wrapper, promptText: candidate.text };
+      }
+    }
+  }
+  return null;
 }
 
 function suggestTitle(context) {
@@ -146,31 +195,34 @@ function normalizeTitleReply(content, fallbackTitle) {
 }
 
 function createRequestMeta(id, model, prompt, body, createdAt) {
-  const titlePrompt = findTitlePromptText(body, prompt);
-  const isTitleRequest = Boolean(titlePrompt);
-  if (!isTitleRequest) {
+  const wrappedPrompt = findSystemPromptWrapper(body, prompt);
+  if (!wrappedPrompt) {
     return { id, model, prompt, created_at: createdAt, kind: "chat", title_request: null };
   }
 
-  const context = parseChatContextFromPrompt(titlePrompt);
+  const payload = wrappedPrompt.wrapper.buildPayload(body, wrappedPrompt.promptText);
   return {
     id,
     model,
-    prompt: "Set a concise chat title in Markdown.",
+    prompt: wrappedPrompt.wrapper.label,
     created_at: createdAt,
-    kind: "title_request",
-    title_request: {
-      instruction: "Set a concise 3-5 word title (emoji optional).",
-      context,
-      attachments: extractAttachmentsFromBody(body),
-      suggested_title: suggestTitle(context || titlePrompt)
+    kind: "wrapped_prompt",
+    wrapper: {
+      type: wrappedPrompt.wrapper.type,
+      label: wrappedPrompt.wrapper.label,
+      editor: wrappedPrompt.wrapper.editor,
+      instruction: wrappedPrompt.wrapper.instruction,
+      ...payload
     }
   };
 }
 
 function normalizeReplyForEntry(entry, content) {
-  if (!entry || !entry.meta || entry.meta.kind !== "title_request") return content;
-  return normalizeTitleReply(content, entry.meta.title_request?.suggested_title || "💬 Chat Summary");
+  if (!entry || !entry.meta || entry.meta.kind !== "wrapped_prompt") return content;
+  const type = entry.meta.wrapper?.type;
+  const wrapper = SYSTEM_PROMPT_WRAPPERS.find((item) => item.type === type);
+  if (!wrapper || typeof wrapper.normalizeReply !== "function") return content;
+  return wrapper.normalizeReply(content, entry.meta.wrapper);
 }
 
 function ndjsonWrite(res, obj) {
@@ -221,10 +273,11 @@ wss.on("connection", (ws) => {
     const id = safeString(msg.id).trim();
     const content = safeString(msg.content).trim();
 
-    if (!id || !content) return;
+    if (!id) return;
 
     const entry = pending.get(id);
     if (!entry) return;
+    if (!content && entry.meta.kind !== "wrapped_prompt") return;
 
     clearTimeout(entry.timer);
 
@@ -346,7 +399,7 @@ function handleGenerateLike(req, res) {
 
   pending.set(id, { res, timer, meta });
 
-  broadcast({ type: "incoming", ...meta });
+  broadcast({ type: meta.kind === "wrapped_prompt" ? "prompt_wrapper" : "incoming", ...meta });
 
   res.on("close", () => {
     if (pending.has(id)) {
