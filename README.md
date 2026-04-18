@@ -10,6 +10,16 @@ When a user sends a message to the fake model, it appears in your panel. You typ
 
 ---
 
+## System Prompt UX (OpenWebUI Title Requests)
+
+- OpenWebUI title/meta prompts are detected and shown as a **friendly title request UI** (not raw meta JSON instructions).
+- The control panel includes a built-in **Markdown title editor** with quick format buttons (header, bold, emoji) and live preview.
+- Context and detected attachments are shown for reference.
+- Submitted title text is automatically wrapped to the required JSON shape:
+  - `{ "title": "## 📊 Analytics Summary" }`
+
+---
+
 ## Requirements
 
 - **Node.js 18+**
@@ -139,8 +149,10 @@ OLLAMA_PORT=11434 PANEL_PORT=3000 UNO_REVERSE_TIMEOUT_SECONDS=600 npm start
 
 - `GET /api/tags`
 - `POST /api/generate`
+- `POST /api/chat`
 - `POST /api/chat/completions`
 - `POST /v1/chat/completions` (compat)
+- `POST /api/ps` (stub system prompt service)
 
 ---
 

@@ -11,11 +11,9 @@
       --text: #e9eeff;
       --muted: #9eb0e0;
       --accent: #6ea8fe;
-      --accent-2: #7ef0c2;
       --danger: #ff7a7a;
       --ok: #72e39a;
       --border: #25315f;
-      --shadow: 0 10px 30px rgba(0,0,0,.35);
       --radius: 14px;
     }
     * { box-sizing: border-box; }
@@ -76,13 +74,66 @@
     }
     .item.active { border-color: var(--accent); background: rgba(110,168,254,0.1); }
     .chat-body { flex: 1; overflow-y: auto; padding: 16px; background: rgba(0,0,0,0.2); }
-    .bubble { max-width: 80%; padding: 10px; border-radius: 10px; margin: 8px 0; }
+    .bubble { max-width: 92%; padding: 10px; border-radius: 10px; margin: 8px 0; }
     .bubble.user { background: var(--border); }
-    .bubble.ai { background: #12352f; align-self: flex-end; margin-left: auto; }
+    .bubble.meta { background: rgba(110,168,254,0.15); border: 1px solid rgba(110,168,254,0.35); }
     .composer { padding: 12px; border-top: 1px solid var(--border); }
-    textarea { width: 100%; height: 80px; background: #0d1430; color: white; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
-    .btn { padding: 8px 16px; background: var(--accent); color: #0b1020; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    textarea {
+      width: 100%;
+      height: 80px;
+      background: #0d1430;
+      color: white;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, Arial;
+    }
+    .btn {
+      padding: 8px 16px;
+      background: var(--accent);
+      color: #0b1020;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
     .btn:disabled { opacity: 0.5; }
+    .toolbar { display:flex; gap:8px; margin: 8px 0; }
+    .toolbtn {
+      border:1px solid var(--border);
+      background:#1a254a;
+      color:var(--text);
+      border-radius:6px;
+      padding:6px 10px;
+      cursor:pointer;
+    }
+    .preview {
+      margin-top: 10px;
+      border:1px solid var(--border);
+      border-radius:8px;
+      background:#0f1735;
+      padding:10px;
+      min-height:46px;
+    }
+    .preview h1, .preview h2, .preview h3 { margin: 0.4em 0; }
+    .context-block {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      padding: 10px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .attachments { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .attachment {
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:4px 10px;
+      font-size:12px;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
@@ -102,7 +153,13 @@
       <div class="card">
         <div id="chat" class="chat-body" style="display:flex; flex-direction:column"></div>
         <div class="composer">
+          <div id="titleTools" class="toolbar" style="display:none">
+            <button class="toolbtn" data-insert="## " type="button">H2</button>
+            <button class="toolbtn" data-wrap="**" type="button"><strong>B</strong></button>
+            <button class="toolbtn" data-insert="✨ " type="button">Emoji</button>
+          </div>
           <textarea id="reply" placeholder="Type AI response..." disabled></textarea>
+          <div id="mdPreview" class="preview" style="display:none"></div>
           <div style="margin-top:8px; text-align:right">
             <button id="send" class="btn" disabled>Send Reply</button>
           </div>
@@ -118,10 +175,76 @@
     const countEl = document.getElementById('count');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+    const titleToolsEl = document.getElementById('titleTools');
+    const mdPreviewEl = document.getElementById('mdPreview');
 
     let items = new Map();
     let selectedId = null;
     let ws;
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderMarkdown(md) {
+      const escaped = escapeHtml(md || '');
+      return escaped
+        .replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+        .replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
+        .replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    }
+
+    function setSelectionText(insertText, wrapText) {
+      const start = replyEl.selectionStart || 0;
+      const end = replyEl.selectionEnd || 0;
+      const before = replyEl.value.slice(0, start);
+      const selected = replyEl.value.slice(start, end);
+      const after = replyEl.value.slice(end);
+      if (wrapText) {
+        replyEl.value = `${before}${wrapText}${selected || 'text'}${wrapText}${after}`;
+      } else {
+        replyEl.value = `${before}${insertText}${after}`;
+      }
+      replyEl.focus();
+      updatePreview();
+    }
+
+    function updatePreview() {
+      const sel = items.get(selectedId);
+      if (!sel || sel.kind !== 'title_request') {
+        mdPreviewEl.style.display = 'none';
+        return;
+      }
+      mdPreviewEl.style.display = 'block';
+      mdPreviewEl.innerHTML = renderMarkdown(replyEl.value.trim() || sel.title_request?.suggested_title || '');
+    }
+
+    function titleRequestHtml(sel) {
+      const info = sel.title_request || {};
+      const context = info.context ? `<div class="context-block">${escapeHtml(info.context)}</div>` : '<div class="context-block">No chat context parsed. Use visible chat + uploads for context.</div>';
+      const attachments = Array.isArray(info.attachments) && info.attachments.length
+        ? `<div class="attachments">${info.attachments.map(a => `<span class="attachment">${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`).join('')}</div>`
+        : '<div class="attachments"><span class="attachment">No attachments</span></div>';
+
+      return `
+        <div class="bubble meta">
+          <div style="font-weight:700; margin-bottom:6px">📝 Set Chat Title</div>
+          <div>${escapeHtml(info.instruction || 'Write a concise title in Markdown. It will be sent as JSON.')}</div>
+          <div style="margin-top:8px; color:var(--muted)">Suggested: ${escapeHtml(info.suggested_title || '')}</div>
+          <div style="margin-top:8px; font-size:13px; color:var(--muted)">Chat context preview:</div>
+          ${context}
+          <div style="margin-top:8px; font-size:13px; color:var(--muted)">Attachments:</div>
+          ${attachments}
+        </div>`;
+    }
 
     function render() {
       const arr = [...items.values()].filter(i => !i.done).sort((a,b) => b.at - a.at);
@@ -129,31 +252,64 @@
       listEl.innerHTML = arr.map(i => `
         <div class="item ${i.id === selectedId ? 'active' : ''}" onclick="select('${i.id}')">
           <div style="font-size:12px; opacity:0.7">${i.id}</div>
-          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${i.prompt}</div>
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(i.kind === 'title_request' ? '📝 Chat title request' : i.prompt || '')}</div>
         </div>
       `).join('');
 
       const sel = items.get(selectedId);
       if (sel && !sel.done) {
-        chatEl.innerHTML = `<div class="bubble user">${sel.prompt}</div>`;
+        chatEl.innerHTML = sel.kind === 'title_request'
+          ? titleRequestHtml(sel)
+          : `<div class="bubble user">${escapeHtml(sel.prompt || '')}</div>`;
+
         replyEl.disabled = false;
         sendBtn.disabled = false;
+
+        if (sel.kind === 'title_request') {
+          titleToolsEl.style.display = 'flex';
+          if (!replyEl.value) {
+            replyEl.value = sel.title_request?.suggested_title || '';
+          }
+          replyEl.placeholder = 'Write title in Markdown (e.g., ## 📊 Analytics Summary)';
+          updatePreview();
+        } else {
+          titleToolsEl.style.display = 'none';
+          mdPreviewEl.style.display = 'none';
+          replyEl.placeholder = 'Type AI response...';
+        }
       } else {
         chatEl.innerHTML = '<div style="text-align:center; margin-top:50px; opacity:0.5">Select a request</div>';
         replyEl.disabled = true;
         sendBtn.disabled = true;
         replyEl.value = '';
+        titleToolsEl.style.display = 'none';
+        mdPreviewEl.style.display = 'none';
       }
     }
 
-    window.select = (id) => { selectedId = id; render(); };
+    window.select = (id) => {
+      selectedId = id;
+      replyEl.value = '';
+      render();
+    };
 
     sendBtn.onclick = () => {
       const text = replyEl.value.trim();
       if (!text || !selectedId) return;
       ws.send(JSON.stringify({ type: 'reply', id: selectedId, content: text }));
       replyEl.value = '';
+      updatePreview();
     };
+
+    replyEl.addEventListener('input', updatePreview);
+
+    titleToolsEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const insert = btn.getAttribute('data-insert');
+      const wrap = btn.getAttribute('data-wrap');
+      setSelectionText(insert || '', wrap || '');
+    });
 
     function connect() {
       ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
