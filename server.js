@@ -149,6 +149,10 @@ panelServer.listen(PANEL_PORT, "0.0.0.0", () => {
 const ollamaApp = express();
 ollamaApp.use(cors());
 ollamaApp.use(bodyParser.json({ limit: "2mb" }));
+ollamaApp.use((req, res, next) => {
+  console.log(`[FAKE OLLAMA API] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 ollamaApp.get("/health", (_req, res) => {
   res.json({ ok: true, service: "fake-ollama", time: nowIso() });
