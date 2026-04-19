@@ -112,18 +112,6 @@ function parseChatContextFromMessages(body) {
   return lines.slice(-10).join("\n").slice(0, 4000);
 }
 
-function isTitleSystemPrompt(prompt) {
-  const text = safeString(prompt).trim();
-  if (!text) return false;
-  const lower = text.toLowerCase();
-  if (/@generate_chat_title\.json/.test(lower)) return true;
-  return (
-    /generate\s+(a\s+)?concise[\s\S]{0,100}title[\s\S]{0,100}emoji/i.test(text) ||
-    /json\s+format[\s\S]{0,80}\{\s*"title"\s*:/i.test(text) ||
-    (/chat\s+history/i.test(text) && /return\s+.*json/i.test(text) && /"title"\s*:/.test(text))
-  );
-}
-
 function getMessageEntries(body) {
   if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return [];
   return body.messages
@@ -141,7 +129,15 @@ const SYSTEM_PROMPT_WRAPPERS = [
     label: "📝 Chat title request",
     editor: "markdown",
     instruction: "Set a concise 3-5 word title (emoji optional).",
-    match: (text) => isTitleSystemPrompt(text),
+    match: (text) => {
+      const lower = text.toLowerCase();
+      return (
+        /@generate_chat_title\.json/.test(lower) ||
+        /generate\s+(a\s+)?concise[\s\S]{0,100}title[\s\S]{0,100}emoji/i.test(text) ||
+        /json\s+format[\s\S]{0,80}\{\s*"title"\s*:/i.test(text) ||
+        (/chat\s+history/i.test(text) && /return\s+.*json/i.test(text) && /"title"\s*:/.test(text))
+      );
+    },
     buildPayload: (body, promptText) => {
       const context = parseChatContextFromPrompt(promptText) || parseChatContextFromMessages(body);
       return {
@@ -152,6 +148,73 @@ const SYSTEM_PROMPT_WRAPPERS = [
       };
     },
     normalizeReply: (content, payload) => normalizeTitleReply(content, payload?.suggested_value || "💬 Chat Summary")
+  },
+  {
+    type: "follow_up",
+    label: "❓ Follow-up questions",
+    editor: "markdown",
+    instruction: "Suggest 3-5 relevant follow-up questions for the user.",
+    match: (text) => /suggest\s+3-5\s+relevant\s+follow-up\s+questions/i.test(text),
+    buildPayload: (body, _promptText) => ({
+      context: parseChatContextFromMessages(body),
+      attachments: extractAttachmentsFromBody(body),
+      response_schema: { follow_ups: ["string"] }
+    }),
+    normalizeReply: (content) => {
+      const lines = content.split("\n").map(l => l.replace(/^[-*•\d.]+\s+/, "").trim()).filter(Boolean);
+      return JSON.stringify({ follow_ups: lines });
+    }
+  },
+  {
+    type: "tags",
+    label: "🏷️ Chat Tags",
+    editor: "markdown",
+    instruction: "Generate relevant tags for this chat.",
+    match: (text) => /generate\s+relevant\s+tags\s+for\s+this\s+chat/i.test(text),
+    buildPayload: (body, _promptText) => ({
+      context: parseChatContextFromMessages(body),
+      attachments: extractAttachmentsFromBody(body),
+      response_schema: { tags: ["string"] }
+    }),
+    normalizeReply: (content) => {
+      const tags = content.split(/[,\n]/).map(t => t.trim()).filter(Boolean);
+      return JSON.stringify({ tags });
+    }
+  },
+  {
+    type: "search",
+    label: "🔍 Search Query Analysis",
+    editor: "markdown",
+    instruction: "Analyze chat history to determine if search queries are needed.",
+    match: (text) => /analyze\s+the\s+chat\s+history\s+to\s+determine\s+the\s+necessity\s+of\s+generating\s+search\s+queries/i.test(text),
+    buildPayload: (body, _promptText) => ({
+      context: parseChatContextFromMessages(body),
+      attachments: extractAttachmentsFromBody(body),
+      response_schema: { queries: ["string"] }
+    }),
+    normalizeReply: (content) => {
+      const queries = content.split("\n").map(l => l.replace(/^[-*•\d.]+\s+/, "").trim()).filter(Boolean);
+      return JSON.stringify({ queries });
+    }
+  },
+  {
+    type: "system_generic",
+    label: "⚙️ System Task",
+    editor: "markdown",
+    instruction: "Complete the requested system meta-task.",
+    match: (text) => text.includes("### Task:") && text.includes("### Guidelines:"),
+    buildPayload: (body, promptText) => ({
+      context: promptText,
+      attachments: extractAttachmentsFromBody(body)
+    }),
+    normalizeReply: (content) => {
+      try {
+        JSON.parse(content);
+        return content;
+      } catch {
+        return JSON.stringify({ response: content });
+      }
+    }
   }
 ];
 
@@ -159,13 +222,44 @@ function findSystemPromptWrapper(body, prompt) {
   const candidates = [{ role: "prompt", text: safeString(prompt) }, ...getMessageEntries(body)]
     .map((entry) => ({ role: safeString(entry.role).toLowerCase(), text: safeString(entry.text).trim() }))
     .filter((entry) => Boolean(entry.text));
+
   for (const candidate of candidates) {
     for (const wrapper of SYSTEM_PROMPT_WRAPPERS) {
       if (wrapper.match(candidate.text, candidate.role)) {
+        log(`SYSTEM_PROMPT: Detected matching wrapper for type: ${wrapper.type}`);
         return { wrapper, promptText: candidate.text };
       }
     }
   }
+
+  // Fallback for unidentified system-like prompts
+  const text = safeString(prompt);
+  const lower = text.toLowerCase();
+  if (lower.includes("json") && (lower.includes("generate") || lower.includes("return") || lower.includes("output"))) {
+    log("SYSTEM_PROMPT: Unmatched system-like prompt detected, using system_unknown fallback");
+    return {
+      wrapper: {
+        type: "system_unknown",
+        label: "❓ Unknown System Task",
+        editor: "markdown",
+        instruction: "This looks like a system prompt but wasn't explicitly matched. Please provide the required response.",
+        buildPayload: (body, promptText) => ({
+          context: promptText,
+          attachments: extractAttachmentsFromBody(body)
+        }),
+        normalizeReply: (content) => {
+          try {
+            JSON.parse(content);
+            return content;
+          } catch {
+            return JSON.stringify({ response: content });
+          }
+        }
+      },
+      promptText: text
+    };
+  }
+
   return null;
 }
 
@@ -200,18 +294,20 @@ function createRequestMeta(id, model, prompt, body, createdAt) {
     return { id, model, prompt, created_at: createdAt, kind: "chat", title_request: null };
   }
 
-  const payload = wrappedPrompt.wrapper.buildPayload(body, wrappedPrompt.promptText);
+  const wrapper = wrappedPrompt.wrapper;
+  const payload = typeof wrapper.buildPayload === "function" ? wrapper.buildPayload(body, wrappedPrompt.promptText) : {};
+
   return {
     id,
     model,
-    prompt: wrappedPrompt.wrapper.label,
+    prompt: wrapper.label,
     created_at: createdAt,
     kind: "wrapped_prompt",
     wrapper: {
-      type: wrappedPrompt.wrapper.type,
-      label: wrappedPrompt.wrapper.label,
-      editor: wrappedPrompt.wrapper.editor,
-      instruction: wrappedPrompt.wrapper.instruction,
+      type: wrapper.type,
+      label: wrapper.label,
+      editor: wrapper.editor,
+      instruction: wrapper.instruction,
       ...payload
     }
   };
@@ -220,7 +316,17 @@ function createRequestMeta(id, model, prompt, body, createdAt) {
 function normalizeReplyForEntry(entry, content) {
   if (!entry || !entry.meta || entry.meta.kind !== "wrapped_prompt") return content;
   const type = entry.meta.wrapper?.type;
-  const wrapper = SYSTEM_PROMPT_WRAPPERS.find((item) => item.type === type);
+  let wrapper = SYSTEM_PROMPT_WRAPPERS.find((item) => item.type === type);
+
+  // Handle system_unknown which is not in the static list
+  if (!wrapper && type === "system_unknown") {
+    wrapper = {
+      normalizeReply: (c) => {
+        try { JSON.parse(c); return c; } catch { return JSON.stringify({ response: c }); }
+      }
+    };
+  }
+
   if (!wrapper || typeof wrapper.normalizeReply !== "function") return content;
   return wrapper.normalizeReply(content, entry.meta.wrapper);
 }
@@ -266,10 +372,62 @@ async function streamContent(res, model, content) {
 // -------------------------
 const panelApp = express();
 panelApp.use(cors());
+panelApp.use(bodyParser.json());
 panelApp.use(express.static(path.join(__dirname, "public")));
 
 panelApp.get("/health", (_req, res) => {
   res.json({ ok: true, service: "control-panel", time: nowIso() });
+});
+
+panelApp.post("/operator-reply", async (req, res) => {
+  const { id, content } = req.body;
+  const safeId = safeString(id).trim();
+  const safeContent = safeString(content).trim();
+
+  if (!safeId) {
+    return res.status(400).json({ error: "Missing id" });
+  }
+
+  const entry = pending.get(safeId);
+  if (!entry) {
+    log(`SYSTEM_PROMPT: Reply received for unknown/expired id: ${safeId}`);
+    return res.status(404).json({ error: "Request not found or expired" });
+  }
+
+  log(`SYSTEM_PROMPT: Operator reply received for id: ${safeId}`);
+
+  clearTimeout(entry.timer);
+  pending.delete(safeId);
+
+  try {
+    const finalContent = normalizeReplyForEntry(entry, safeContent);
+    log(`SYSTEM_PROMPT: Sent reply to client for id: ${safeId}, payload: ${finalContent}`);
+
+    // For system prompts, we often want to send the JSON immediately rather than streaming words
+    if (entry.meta.kind === "wrapped_prompt") {
+      ndjsonWrite(entry.res, {
+        model: entry.meta.model,
+        created_at: nowIso(),
+        response: finalContent,
+        done: true
+      });
+      entry.res.end();
+    } else {
+      await streamContent(entry.res, entry.meta.model, finalContent);
+    }
+
+    broadcast({
+      type: "answered",
+      id: safeId,
+      content: safeContent,
+      answered_at: nowIso()
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("SYSTEM_PROMPT: Failed writing response to client:", err);
+    res.status(500).json({ error: "Failed to deliver reply" });
+  }
 });
 
 const panelServer = http.createServer(panelApp);
@@ -383,11 +541,22 @@ ollamaApp.get("/debug/ws", (_req, res) => {
   res.json({ ws_clients: wss.clients.size, time: nowIso() });
 });
 
+function extractId(req) {
+  const body = req.body || {};
+  // Prioritize chat_id from body, then metadata, then headers
+  const id = body.chat_id ||
+             (body.metadata && body.metadata.chat_id) ||
+             req.headers["x-chat-id"] ||
+             req.headers["x-request-id"] ||
+             makeId();
+  return safeString(id);
+}
+
 function handleGenerateLike(req, res) {
   const body = req.body || {};
   const model = safeString(body.model || "uno-reverse");
   const prompt = extractPromptFromBody(body);
-  const id = makeId();
+  const id = extractId(req);
   const createdAt = nowIso();
 
   res.status(200);
@@ -399,8 +568,15 @@ function handleGenerateLike(req, res) {
 
   const meta = createRequestMeta(id, model, prompt, body, createdAt);
 
+  if (meta.kind === "wrapped_prompt") {
+    log(`SYSTEM_PROMPT: Intercepted system prompt for id: ${id}, type: ${meta.wrapper.type}`);
+  }
+
   const timer = setTimeout(() => {
     try {
+      if (meta.kind === "wrapped_prompt") {
+        log(`SYSTEM_PROMPT: Timeout for id: ${id}`);
+      }
       ndjsonWrite(res, { model, created_at: nowIso(), response: "[Operator did not respond in time]", done: false });
       ndjsonWrite(res, { model, created_at: nowIso(), response: "", done: true });
       res.end();
@@ -414,7 +590,12 @@ function handleGenerateLike(req, res) {
 
   pending.set(id, { res, timer, meta });
 
-  broadcast({ type: meta.kind === "wrapped_prompt" ? "prompt_wrapper" : "incoming", ...meta });
+  if (meta.kind === "wrapped_prompt") {
+    log(`SYSTEM_PROMPT: Emitting system_prompt_request for id: ${id}`);
+    broadcast({ type: "system_prompt_request", ...meta });
+  } else {
+    broadcast({ type: "incoming", ...meta });
+  }
 
   res.on("close", () => {
     if (pending.has(id)) {

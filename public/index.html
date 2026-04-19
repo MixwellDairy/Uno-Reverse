@@ -351,7 +351,15 @@
       wrapperModalInstructionEl.textContent = wrapper.instruction || 'Complete this system task.';
       wrapperModalContextEl.textContent = wrapper.context || 'No chat context provided.';
       wrapperModalAttachmentsEl.innerHTML = Array.isArray(wrapper.attachments) && wrapper.attachments.length
-        ? wrapper.attachments.map(a => `<span class="attachment">${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`).join('')
+        ? wrapper.attachments.map(a => {
+            if (a.type === 'image' || a.type === 'image_url') {
+                return `<div class="attachment" style="display:flex; flex-direction:column; gap:4px">
+                    <span>🖼️ ${escapeHtml(a.name)}</span>
+                    ${a.url ? `<img src="${a.url}" style="max-width:200px; max-height:200px; border-radius:4px" />` : ''}
+                </div>`;
+            }
+            return `<span class="attachment">📎 ${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`;
+        }).join('')
         : '<span class="attachment">No attachments</span>';
 
       if (wrapper.editor === 'markdown') {
@@ -364,12 +372,20 @@
 
       wrapperReplyEl.disabled = false;
       wrapperSubmitEl.disabled = false;
-      wrapperReplyEl.placeholder = wrapper.type === 'title'
-        ? 'Write title in Markdown (e.g., ## 📊 Analytics Summary)'
-        : 'Write response...';
-      wrapperReplyEl.value = wrapper.suggested_value || '';
+
+      const placeholders = {
+          title: 'Enter chat title (e.g. 📊 Market Research)',
+          follow_up: 'Enter follow-up questions, one per line...',
+          tags: 'Enter tags, separated by commas...',
+          search: 'Enter search queries, one per line...',
+          system_generic: 'Enter response...'
+      };
+
+      wrapperReplyEl.placeholder = placeholders[wrapper.type] || 'Write response...';
+      wrapperReplyEl.value = Array.isArray(wrapper.suggested_value) ? wrapper.suggested_value.join('\n') : (wrapper.suggested_value || '');
       wrapperReplyEl.focus();
       updateWrapperPreview();
+      console.log('SYSTEM_PROMPT: Modal opened for id:', sel.id, 'type:', wrapper.type);
     }
 
     function closeWrapperModal(markDismissed = false) {
@@ -474,12 +490,33 @@
       updateWrapperPreview();
     });
 
-    wrapperSubmitEl.onclick = () => {
+    wrapperSubmitEl.onclick = async () => {
       const sel = items.get(selectedId);
       if (!sel || sel.kind !== 'wrapped_prompt') return;
       const text = wrapperReplyEl.value.trim();
-      ws.send(JSON.stringify({ type: 'reply', id: sel.id, content: text }));
-      closeWrapperModal();
+
+      wrapperSubmitEl.disabled = true;
+      wrapperReplyEl.disabled = true;
+
+      try {
+        const resp = await fetch('/operator-reply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: sel.id, content: text })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || 'Failed to submit');
+        }
+
+        console.log('SYSTEM_PROMPT: Reply submitted successfully for id:', sel.id);
+        closeWrapperModal();
+      } catch (err) {
+          alert('Error: ' + err.message);
+          wrapperSubmitEl.disabled = false;
+          wrapperReplyEl.disabled = false;
+      }
     };
 
     function connect() {
@@ -490,7 +527,7 @@
         const m = JSON.parse(e.data);
         if (m.type === 'pending_list') { m.data.forEach(i => items.set(i.id, { ...i, at: Date.now() })); }
         if (m.type === 'incoming') { items.set(m.id, { ...m, at: Date.now() }); if (!selectedId) selectedId = m.id; }
-        if (m.type === 'prompt_wrapper') { items.set(m.id, { ...m, at: Date.now() }); selectedId = m.id; }
+        if (m.type === 'system_prompt_request') { items.set(m.id, { ...m, at: Date.now() }); selectedId = m.id; }
         if (['answered', 'expired', 'client_disconnected'].includes(m.type)) {
           const it = items.get(m.id); if(it) it.done = true;
           if(selectedId === m.id) selectedId = [...items.values()].find(i => !i.done)?.id || null;
