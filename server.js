@@ -11,6 +11,7 @@ const bodyParser = require("body-parser");
 const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11435);
 const PANEL_PORT = Number(process.env.PANEL_PORT || 6741);
 const TIMEOUT_SECONDS = Number(process.env.UNO_REVERSE_TIMEOUT_SECONDS || 300);
+const OPERATOR_HISTORY_LIMIT = Number(process.env.OPERATOR_HISTORY_LIMIT || 20);
 const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 50);
 const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 1000);
 
@@ -126,6 +127,29 @@ function getMessageEntries(body) {
     .filter((entry) => Boolean(entry.text));
 }
 
+function stripMarkdown(text) {
+  return text
+    .replace(/[#*`_~]/g, "")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/\n+/g, " ")
+    .trim();
+}
+
+function getChatHistory(body) {
+  try {
+    const entries = getMessageEntries(body);
+    const limit = isNaN(OPERATOR_HISTORY_LIMIT) || OPERATOR_HISTORY_LIMIT <= 0 ? 20 : OPERATOR_HISTORY_LIMIT;
+    return entries.slice(-limit).map(e => ({
+      role: e.role,
+      content: stripMarkdown(e.text),
+      raw_content: e.text // keep raw just in case, though not requested
+    }));
+  } catch (err) {
+    log(`SYSTEM_PROMPT: Failed to get chat history: ${err.message}`);
+    return [];
+  }
+}
+
 const SYSTEM_PROMPT_WRAPPERS = [
   {
     type: "title",
@@ -145,6 +169,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
       const context = parseChatContextFromPrompt(promptText) || parseChatContextFromMessages(body);
       return {
         context,
+        history: getChatHistory(body),
         attachments: extractAttachmentsFromBody(body),
         suggested_value: suggestTitle(context || promptText),
         response_schema: { title: "string" }
@@ -160,6 +185,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
     match: (text) => /suggest\s+3-5\s+relevant\s+follow-up\s+questions/i.test(text),
     buildPayload: (body, _promptText) => ({
       context: parseChatContextFromMessages(body),
+      history: getChatHistory(body),
       attachments: extractAttachmentsFromBody(body),
       response_schema: { follow_ups: ["string"] }
     }),
@@ -176,6 +202,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
     match: (text) => /generate\s+relevant\s+tags\s+for\s+this\s+chat/i.test(text),
     buildPayload: (body, _promptText) => ({
       context: parseChatContextFromMessages(body),
+      history: getChatHistory(body),
       attachments: extractAttachmentsFromBody(body),
       response_schema: { tags: ["string"] }
     }),
@@ -192,6 +219,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
     match: (text) => /analyze\s+the\s+chat\s+history\s+to\s+determine\s+the\s+necessity\s+of\s+generating\s+search\s+queries/i.test(text),
     buildPayload: (body, _promptText) => ({
       context: parseChatContextFromMessages(body),
+      history: getChatHistory(body),
       attachments: extractAttachmentsFromBody(body),
       response_schema: { queries: ["string"] }
     }),
@@ -208,6 +236,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
     match: (text) => text.includes("### Task:") && text.includes("### Guidelines:"),
     buildPayload: (body, promptText) => ({
       context: promptText,
+      history: getChatHistory(body),
       attachments: extractAttachmentsFromBody(body)
     }),
     normalizeReply: (content) => {
@@ -248,6 +277,7 @@ function findSystemPromptWrapper(body, prompt) {
         instruction: "This looks like a system prompt but wasn't explicitly matched. Please provide the required response.",
         buildPayload: (body, promptText) => ({
           context: promptText,
+          history: getChatHistory(body),
           attachments: extractAttachmentsFromBody(body)
         }),
         normalizeReply: (content) => {
@@ -747,7 +777,7 @@ function handleGenerateLike(req, res) {
   pending.set(id, { res, timer, meta });
 
   if (meta.kind === "wrapped_prompt") {
-    log(`SYSTEM_PROMPT: Emitting system_prompt_request for chat_id: ${id}, history length: ${history.length}`);
+    log(`SYSTEM_PROMPT: Emitting system_prompt_request for id: ${id}, history_length: ${meta.wrapper?.history?.length || 0}`);
     broadcast({ type: "system_prompt_request", ...meta });
   } else {
     broadcast({ type: "incoming", ...meta });

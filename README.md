@@ -142,6 +142,7 @@ Now reply from control panel and curl will finish.
 - `OLLAMA_PORT` (default `11434`)
 - `PANEL_PORT` (default `3000`)
 - `UNO_REVERSE_TIMEOUT_SECONDS` (default `300`)
+- `OPERATOR_HISTORY_LIMIT` (default `20`): Number of recent chat messages to include in the system prompt history.
 
 Example:
 ```bash

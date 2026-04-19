@@ -135,36 +135,48 @@
       font-size: 13px;
       color: var(--muted);
     }
-    .history-container {
-      max-height: 250px;
-      overflow-y: auto;
+    .history-block {
       margin-bottom: 12px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: rgba(0,0,0,0.2);
+      background: rgba(0, 0, 0, 0.2);
+      max-height: 300px;
+      overflow-y: auto;
       padding: 10px;
-    }
-    .history-item {
-      margin-bottom: 10px;
-      padding: 8px;
-      border-radius: 6px;
       font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
-    .history-item:last-child { margin-bottom: 0; }
-    .history-item.user {
-      background: rgba(255, 255, 255, 0.05);
-      border-left: 3px solid var(--muted);
+    .history-msg {
+      padding: 6px 10px;
+      border-radius: 6px;
+      max-width: 90%;
     }
-    .history-item.assistant {
+    .history-msg .msg-content {
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .history-msg.expanded .msg-content {
+      -webkit-line-clamp: unset;
+    }
+    .history-msg.user {
+      background: var(--border);
+      align-self: flex-start;
+    }
+    .history-msg.assistant {
       background: rgba(110, 168, 254, 0.1);
-      border-left: 3px solid var(--accent);
+      border: 1px solid rgba(110, 168, 254, 0.2);
+      align-self: flex-end;
     }
-    .history-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      font-weight: bold;
-      margin-bottom: 4px;
-      opacity: 0.6;
+    .history-fallback {
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-style: italic;
     }
     .attachments { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
     .attachment {
@@ -251,15 +263,15 @@
     </div>
   </div>
   <div id="wrapperModalBackdrop" class="modal-backdrop">
-    <div class="modal">
-      <div class="modal-header">
+      <div class="modal">
+        <div id="wrapperModalHistory" class="history-block"></div>
+        <div class="modal-header">
         <div>
           <div id="wrapperModalTitle" style="font-weight:700">System Task</div>
           <div id="wrapperModalInstruction" class="muted" style="font-size:13px"></div>
         </div>
         <button id="wrapperClose" class="toolbtn" type="button">Close</button>
       </div>
-      <div id="wrapperModalHistory" class="history-container"></div>
       <div id="wrapperModalContext" class="context-block"></div>
       <div id="wrapperModalAttachments" class="attachments"></div>
       <div id="wrapperTools" class="toolbar" style="display:none">
@@ -387,26 +399,27 @@
       const wrapper = sel.wrapper || {};
       wrapperModalOpenFor = sel.id;
       wrapperModalBackdropEl.style.display = 'flex';
-      wrapperModalTitleEl.textContent = wrapper.label || 'System task';
-      wrapperModalInstructionEl.textContent = wrapper.instruction || 'Complete this system task.';
 
-      const history = sel.history || [];
-      if (history.length > 0) {
-        wrapperModalHistoryEl.style.display = 'block';
-        wrapperModalHistoryEl.innerHTML = history.map(h => `
-          <div class="history-item ${h.role === 'assistant' ? 'assistant' : 'user'}">
-            <div class="history-label">${escapeHtml(h.role)}</div>
-            <div style="white-space: pre-wrap;">${escapeHtml(h.content)}</div>
+      const history = wrapper.history || sel.history || [];
+      console.log('SYSTEM_PROMPT: Rendering history for id:', sel.id, 'count:', history.length);
+
+      if (history.length === 0) {
+        wrapperModalHistoryEl.innerHTML = '<div class="history-fallback">⚠️ No chat history available for this request</div>';
+      } else {
+        wrapperModalHistoryEl.innerHTML = history.map(msg => `
+          <div class="history-msg ${escapeHtml(msg.role)}">
+            <div style="font-size:10px; opacity:0.6; margin-bottom:2px; font-weight:bold">${escapeHtml(msg.role.toUpperCase())}</div>
+            <div class="msg-content">${escapeHtml(msg.content)}</div>
           </div>
         `).join('');
         // Scroll to bottom
-        setTimeout(() => { wrapperModalHistoryEl.scrollTop = wrapperModalHistoryEl.scrollHeight; }, 10);
-      } else {
-        wrapperModalHistoryEl.style.display = 'none';
+        setTimeout(() => { wrapperModalHistoryEl.scrollTop = wrapperModalHistoryEl.scrollHeight; }, 0);
       }
 
+      wrapperModalTitleEl.textContent = wrapper.label || 'System task';
+      wrapperModalInstructionEl.textContent = wrapper.instruction || 'Complete this system task.';
+
       wrapperModalContextEl.textContent = wrapper.context || 'No chat context provided.';
-      console.log('SYSTEM_PROMPT: Rendering history for id:', sel.id, 'length:', history.length);
       wrapperModalAttachmentsEl.innerHTML = Array.isArray(wrapper.attachments) && wrapper.attachments.length
         ? wrapper.attachments.map(a => {
             if (a.type === 'image' || a.type === 'image_url') {
@@ -501,8 +514,12 @@
         mdPreviewEl.style.display = 'none';
       }
 
-      if (window.titleToolsEl) titleToolsEl.style.display = chatToolsEl.style.display; // keep alias in sync
       const openBtn = document.getElementById('openWrapperTaskBtn');
+      // Synchronization logic for title editor tool buttons (if they existed separately)
+      // but in this version it seems they use shared ones.
+      // Re-adding the line that was accidentally removed if it's still relevant.
+      const titleToolsEl = document.getElementById('titleTools');
+      if (titleToolsEl) titleToolsEl.style.display = chatToolsEl.style.display;
       if (openBtn) openBtn.onclick = () => openWrapperModalForSelection(true);
     }
 
@@ -538,6 +555,11 @@
       if (e.target === wrapperModalBackdropEl) closeWrapperModal(true);
     });
     wrapperReplyEl.addEventListener('input', updateWrapperPreview);
+
+    wrapperModalHistoryEl.addEventListener('click', (e) => {
+      const msg = e.target.closest('.history-msg');
+      if (msg) msg.classList.toggle('expanded');
+    });
 
     wrapperToolsEl.addEventListener('click', (e) => {
       const btn = e.target.closest('button');
