@@ -237,7 +237,9 @@
         <div id="list" class="list"></div>
       </div>
       <div class="card">
+        <div id="chatHistory" class="history-block" style="margin: 10px; flex-shrink: 0; display: none;"></div>
         <div id="chat" class="chat-body" style="display:flex; flex-direction:column"></div>
+        <div id="chatAttachments" class="attachments" style="padding: 0 16px 8px 16px; background: rgba(0,0,0,0.2);"></div>
         <div class="composer">
           <div id="chatTools" class="toolbar" style="display:none">
             <button class="toolbtn" data-insert="# " type="button" title="Heading 1">H1</button>
@@ -295,6 +297,8 @@
   <script>
     const listEl = document.getElementById('list');
     const chatEl = document.getElementById('chat');
+    const chatHistoryEl = document.getElementById('chatHistory');
+    const chatAttachmentsEl = document.getElementById('chatAttachments');
     const replyEl = document.getElementById('reply');
     const sendBtn = document.getElementById('send');
     const countEl = document.getElementById('count');
@@ -390,6 +394,35 @@
         </div>`;
     }
 
+    function renderHistory(container, history) {
+      if (!history || history.length === 0) {
+        container.innerHTML = '<div class="history-fallback">⚠️ No chat history available</div>';
+      } else {
+        container.innerHTML = history.map(msg => `
+          <div class="history-msg ${escapeHtml(msg.role)}">
+            <div style="font-size:10px; opacity:0.6; margin-bottom:2px; font-weight:bold">${escapeHtml(msg.role.toUpperCase())}</div>
+            <div class="msg-content">${escapeHtml(msg.content)}</div>
+          </div>
+        `).join('');
+        // Scroll to bottom
+        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 0);
+      }
+    }
+
+    function renderAttachments(container, attachments) {
+      container.innerHTML = Array.isArray(attachments) && attachments.length
+        ? attachments.map(a => {
+            if (a.type === 'image' || a.type === 'image_url') {
+                return `<div class="attachment" style="display:flex; flex-direction:column; gap:4px">
+                    <span>🖼️ ${escapeHtml(a.name)}</span>
+                    ${a.url ? `<img src="${a.url}" style="max-width:200px; max-height:200px; border-radius:4px" />` : ''}
+                </div>`;
+            }
+            return `<span class="attachment">📎 ${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`;
+        }).join('')
+        : '<span class="attachment">No attachments</span>';
+    }
+
     function openWrapperModalForSelection(force = false) {
       const sel = items.get(selectedId);
       if (!sel || sel.kind !== 'wrapped_prompt') return;
@@ -402,35 +435,13 @@
 
       const history = wrapper.history || sel.history || [];
       console.log('SYSTEM_PROMPT: Rendering history for id:', sel.id, 'count:', history.length);
-
-      if (history.length === 0) {
-        wrapperModalHistoryEl.innerHTML = '<div class="history-fallback">⚠️ No chat history available for this request</div>';
-      } else {
-        wrapperModalHistoryEl.innerHTML = history.map(msg => `
-          <div class="history-msg ${escapeHtml(msg.role)}">
-            <div style="font-size:10px; opacity:0.6; margin-bottom:2px; font-weight:bold">${escapeHtml(msg.role.toUpperCase())}</div>
-            <div class="msg-content">${escapeHtml(msg.content)}</div>
-          </div>
-        `).join('');
-        // Scroll to bottom
-        setTimeout(() => { wrapperModalHistoryEl.scrollTop = wrapperModalHistoryEl.scrollHeight; }, 0);
-      }
+      renderHistory(wrapperModalHistoryEl, history);
 
       wrapperModalTitleEl.textContent = wrapper.label || 'System task';
       wrapperModalInstructionEl.textContent = wrapper.instruction || 'Complete this system task.';
 
       wrapperModalContextEl.textContent = wrapper.context || 'No chat context provided.';
-      wrapperModalAttachmentsEl.innerHTML = Array.isArray(wrapper.attachments) && wrapper.attachments.length
-        ? wrapper.attachments.map(a => {
-            if (a.type === 'image' || a.type === 'image_url') {
-                return `<div class="attachment" style="display:flex; flex-direction:column; gap:4px">
-                    <span>🖼️ ${escapeHtml(a.name)}</span>
-                    ${a.url ? `<img src="${a.url}" style="max-width:200px; max-height:200px; border-radius:4px" />` : ''}
-                </div>`;
-            }
-            return `<span class="attachment">📎 ${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`;
-        }).join('')
-        : '<span class="attachment">No attachments</span>';
+      renderAttachments(wrapperModalAttachmentsEl, wrapper.attachments || sel.attachments);
 
       if (wrapper.editor === 'markdown') {
         wrapperToolsEl.style.display = 'flex';
@@ -494,6 +505,8 @@
           replyEl.placeholder = 'Use the task modal for this system prompt';
           chatToolsEl.style.display = 'none';
           mdPreviewEl.style.display = 'none';
+          chatHistoryEl.style.display = 'none';
+          chatAttachmentsEl.style.display = 'none';
           if (wrapperModalOpenFor !== sel.id && wrapperModalDismissedFor !== sel.id) openWrapperModalForSelection();
         } else {
           wrapperModalDismissedFor = null;
@@ -502,6 +515,13 @@
           sendBtn.disabled = false;
           replyEl.placeholder = 'Type AI response...';
           chatToolsEl.style.display = 'flex';
+
+          chatHistoryEl.style.display = 'flex';
+          renderHistory(chatHistoryEl, sel.history);
+
+          chatAttachmentsEl.style.display = 'flex';
+          renderAttachments(chatAttachmentsEl, sel.attachments);
+
           updateChatPreview();
         }
       } else {
@@ -512,6 +532,8 @@
         replyEl.value = '';
         chatToolsEl.style.display = 'none';
         mdPreviewEl.style.display = 'none';
+        chatHistoryEl.style.display = 'none';
+        chatAttachmentsEl.style.display = 'none';
       }
 
       const openBtn = document.getElementById('openWrapperTaskBtn');
