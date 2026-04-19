@@ -78,20 +78,54 @@ function extractPromptFromBody(body) {
 }
 
 function extractAttachmentsFromBody(body) {
-  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return [];
+  if (!body || typeof body !== "object") return [];
   const attachments = [];
-  for (const msg of body.messages) {
-    const content = msg && msg.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content) {
-      if (!part || typeof part !== "object") continue;
-      const type = safeString(part.type || "attachment");
-      if (type === "text") continue;
-      const name = safeString(part.name || part.filename || part.title || type).slice(0, 200) || "attachment";
-      attachments.push({ type, name });
+
+  // Handle Ollama /api/chat images (top-level images array in message)
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (Array.isArray(msg.images)) {
+        for (const img of msg.images) {
+          attachments.push({
+            type: "image",
+            name: "image.png",
+            url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+          });
+        }
+      }
+
+      // Handle OpenAI /v1/chat/completions multi-part content
+      const content = msg && msg.content;
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (!part || typeof part !== "object") continue;
+          if (part.type === "image_url") {
+            attachments.push({
+              type: "image",
+              name: "image.png",
+              url: part.image_url?.url
+            });
+          } else if (part.type === "attachment" || part.type === "file") {
+            const name = safeString(part.name || part.filename || part.title || part.type).slice(0, 200) || "attachment";
+            attachments.push({ type: part.type, name, url: part.url });
+          }
+        }
+      }
     }
   }
-  return attachments.slice(0, 20);
+
+  // Handle Ollama /api/generate images (top-level images array in body)
+  if (Array.isArray(body.images)) {
+    for (const img of body.images) {
+      attachments.push({
+        type: "image",
+        name: "image.png",
+        url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+      });
+    }
+  }
+
+  return attachments.slice(0, 40);
 }
 
 function parseChatContextFromPrompt(prompt) {
@@ -160,7 +194,7 @@ const SYSTEM_PROMPT_WRAPPERS = [
       const lower = text.toLowerCase();
       return (
         /@generate_chat_title\.json/.test(lower) ||
-        /generate\s+(a\s+)?concise[\s\S]{0,100}title[\s\S]{0,100}emoji/i.test(text) ||
+        /generate\s+(a\s+)?concise[\s\S]{0,100}title/i.test(text) ||
         /json\s+format[\s\S]{0,80}\{\s*"title"\s*:/i.test(text) ||
         (/chat\s+history/i.test(text) && /return\s+.*json/i.test(text) && /"title"\s*:/.test(text))
       );
@@ -720,9 +754,10 @@ function handleGenerateLike(req, res) {
 
   const meta = createRequestMeta(id, model, prompt, body, createdAt, format, stream);
 
-  // Attach history to meta
+  // Attach history and attachments to meta
   const history = chatHistories.get(id) || [];
   meta.history = history;
+  meta.attachments = extractAttachmentsFromBody(body);
 
   if (meta.kind === "wrapped_prompt") {
     log(`SYSTEM_PROMPT: Received system prompt for chat_id: ${id}`);
@@ -796,6 +831,32 @@ ollamaApp.post("/api/generate", handleGenerateLike);
 ollamaApp.post("/api/chat", handleGenerateLike);
 ollamaApp.post("/api/chat/completions", handleGenerateLike);
 ollamaApp.post("/v1/chat/completions", handleGenerateLike);
+
+ollamaApp.post("/api/embed", (req, res) => {
+  const body = req.body || {};
+  const input = Array.isArray(body.input) ? body.input : [body.input || ""];
+  const model = body.model || "nomic-embed-text";
+
+  log(`FAKE OLLAMA API: Intercepted /api/embed for model: ${model}, input count: ${input.length}`);
+
+  // Return stub embeddings (zeros)
+  const embeddings = input.map(() => Array(768).fill(0));
+
+  res.json({
+    model,
+    embeddings,
+    total_tokens: 0
+  });
+});
+
+ollamaApp.post("/api/web_search", (req, res) => {
+  const { query } = req.body;
+  log(`FAKE OLLAMA API: Intercepted /api/web_search for query: ${query}`);
+
+  // Return empty search results
+  res.json([]);
+});
+
 ollamaApp.post("/api/ps", (_req, res) => {
   res.json({ ok: true, service: "prompt-service", status: "stub", time: nowIso() });
 });

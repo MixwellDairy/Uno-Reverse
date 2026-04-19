@@ -137,6 +137,14 @@ Now reply from control panel and curl will finish.
 
 ---
 
+## Documentation
+
+For a detailed mapping of communication flows between Open-WebUI and Ollama, including payload structures and how `uno-reverse` handles them, see:
+
+👉 [**OLLAMA_FLOWS.md**](./OLLAMA_FLOWS.md)
+
+---
+
 ## Environment Variables
 
 - `OLLAMA_PORT` (default `11435`)
