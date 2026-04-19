@@ -12,11 +12,14 @@ const OLLAMA_PORT = Number(process.env.OLLAMA_PORT || 11435);
 const PANEL_PORT = Number(process.env.PANEL_PORT || 6741);
 const TIMEOUT_SECONDS = Number(process.env.UNO_REVERSE_TIMEOUT_SECONDS || 300);
 const OPERATOR_HISTORY_LIMIT = Number(process.env.OPERATOR_HISTORY_LIMIT || 20);
+const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 50);
+const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 1000);
 
 // -------------------------
 // State
 // -------------------------
 const pending = new Map();
+const chatHistories = new Map(); // chat_id -> [{role, content}]
 let idCounter = 0;
 
 // -------------------------
@@ -512,6 +515,11 @@ panelApp.post("/operator-reply", async (req, res) => {
     const finalContent = normalizeReplyForEntry(entry, safeContent);
     log(`SYSTEM_PROMPT: Sent reply to client for id: ${safeId}, payload: ${finalContent}, stream: ${entry.meta.stream}`);
 
+    // Update history with assistant reply (only for regular chats)
+    if (entry.meta.kind === "chat") {
+      updateChatHistory(safeId, "assistant", safeContent);
+    }
+
     await sendFinalResponse(entry, finalContent);
 
     broadcast({
@@ -568,6 +576,12 @@ wss.on("connection", (ws) => {
 
     try {
       const finalContent = normalizeReplyForEntry(entry, content);
+
+      // Update history with assistant reply (only for regular chats)
+      if (entry.meta.kind === "chat") {
+        updateChatHistory(id, "assistant", content);
+      }
+
       await sendFinalResponse(entry, finalContent);
     } catch (err) {
       console.error("Failed writing response stream:", err);
@@ -641,13 +655,36 @@ ollamaApp.get("/debug/ws", (_req, res) => {
 
 function extractId(req) {
   const body = req.body || {};
-  // Prioritize chat_id from body, then metadata, then headers
-  const id = body.chat_id ||
-             (body.metadata && body.metadata.chat_id) ||
-             req.headers["x-chat-id"] ||
-             req.headers["x-request-id"] ||
-             makeId();
-  return safeString(id);
+  // Prioritize chat_id from body, then conversation_id, then metadata, then headers
+  let id = body.chat_id || body.conversation_id;
+
+  if (id) return safeString(id);
+
+  id = (body.metadata && body.metadata.chat_id) ||
+       req.headers["x-chat-id"] ||
+       req.headers["x-request-id"];
+
+  if (id) return safeString(id);
+
+  const newId = makeId();
+  log(`SYSTEM_PROMPT: Missing chat_id in request, generated new id: ${newId}`);
+  return newId;
+}
+
+function updateChatHistory(chatId, role, content) {
+  if (!chatId) return;
+  if (!chatHistories.has(chatId)) {
+    if (chatHistories.size >= MAX_SESSIONS) {
+      const oldestId = chatHistories.keys().next().value;
+      chatHistories.delete(oldestId);
+    }
+    chatHistories.set(chatId, []);
+  }
+  const history = chatHistories.get(chatId);
+  history.push({ role, content: safeString(content) });
+  if (history.length > HISTORY_LIMIT) {
+    history.shift();
+  }
 }
 
 function handleGenerateLike(req, res) {
@@ -656,6 +693,19 @@ function handleGenerateLike(req, res) {
   const prompt = extractPromptFromBody(body);
   const id = extractId(req);
   const createdAt = nowIso();
+
+  // Sync history with body.messages if available, capturing both user and assistant turns
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
+    const incoming = body.messages.map(m => ({
+      role: safeString(m.role).toLowerCase(),
+      content: extractMessageText(m.content)
+    })).filter(m => m.role !== "system");
+
+    // We prioritize the client's view of the history as it's the ground truth for their UI
+    chatHistories.set(id, incoming.slice(-HISTORY_LIMIT));
+  } else if (body.prompt) {
+    updateChatHistory(id, "user", body.prompt);
+  }
 
   // Determine format based on endpoint
   let format = "ollama-generate";
@@ -669,6 +719,15 @@ function handleGenerateLike(req, res) {
   const stream = body.stream !== undefined ? body.stream === true : format !== "openai";
 
   const meta = createRequestMeta(id, model, prompt, body, createdAt, format, stream);
+
+  // Attach history to meta
+  const history = chatHistories.get(id) || [];
+  meta.history = history;
+
+  if (meta.kind === "wrapped_prompt") {
+    log(`SYSTEM_PROMPT: Received system prompt for chat_id: ${id}`);
+    log(`SYSTEM_PROMPT: Looked up history for chat_id: ${id}`);
+  }
 
   if (stream) {
     res.status(200);
