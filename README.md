@@ -3,7 +3,7 @@
 Be the AI in OpenWebUI chats.
 
 `uno-reverse` runs:
-- a **fake Ollama-compatible API** on `http://localhost:11434`
+- a **fake Ollama-compatible API** on `http://localhost:11435`
 - a **human control panel** on `http://localhost:6741`
 
 When a user sends a message to the fake model, it appears in your panel. You type the response, and it streams back as if it came from an AI model.
@@ -66,7 +66,7 @@ echo $!   # prints the background process id (PID)
 ```
 
 You should see:
-- `🤖 Fake Ollama API: http://localhost:11434`
+- `🤖 Fake Ollama API: http://localhost:11435`
 - `🧠 Control panel: http://localhost:6741`
 
 ### 5) Open control panel
@@ -77,7 +77,7 @@ Go to:
 ### 6) Configure OpenWebUI
 Set Ollama/base URL to:
 
-`http://localhost:11434`
+`http://localhost:11435`
 
 Model:
 
@@ -123,12 +123,12 @@ Starts both servers.
 
 ### Check model list
 ```bash
-curl http://localhost:11434/api/tags
+curl http://localhost:11435/api/tags
 ```
 
 ### Send a prompt (streaming)
 ```bash
-curl -N -X POST "http://localhost:11434/api/generate" \
+curl -N -X POST "http://localhost:11435/api/generate" \
   -H "Content-Type: application/json" \
   -d '{"model":"uno-reverse","prompt":"Hello from curl"}'
 ```
@@ -139,14 +139,14 @@ Now reply from control panel and curl will finish.
 
 ## Environment Variables
 
-- `OLLAMA_PORT` (default `11434`)
+- `OLLAMA_PORT` (default `11435`)
 - `PANEL_PORT` (default `3000`)
 - `UNO_REVERSE_TIMEOUT_SECONDS` (default `300`)
 - `OPERATOR_HISTORY_LIMIT` (default `20`): Number of recent chat messages to include in the system prompt history.
 
 Example:
 ```bash
-OLLAMA_PORT=11434 PANEL_PORT=3000 UNO_REVERSE_TIMEOUT_SECONDS=600 npm start
+OLLAMA_PORT=11435 PANEL_PORT=3000 UNO_REVERSE_TIMEOUT_SECONDS=600 npm start
 ```
 
 ---
@@ -174,7 +174,7 @@ OLLAMA_PORT=11435 PANEL_PORT=3001 npm start
 
 ### OpenWebUI not connecting
 - ensure app is running
-- URL is `http://localhost:11434`
+- URL is `http://localhost:11435`
 - model is `uno-reverse`
 
 ---
