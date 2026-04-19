@@ -221,9 +221,9 @@
     <div class="topbar">
       <div style="font-weight:bold">uno-reverse</div>
       <div class="status">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:var(--muted)">
+        <label id="skipSystemTasksLabel" style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:var(--muted)" title="Automatically respond to system prompts with default values.">
           <input type="checkbox" id="skipSystemTasks" style="cursor:pointer" />
-          Skip System Tasks
+          <span>Skip System Tasks</span>
         </label>
         <div style="display:flex; align-items:center; gap:8px">
           <div id="statusDot" class="dot"></div>
@@ -318,6 +318,7 @@
     const wrapperPreviewEl = document.getElementById('wrapperPreview');
     const wrapperSubmitEl = document.getElementById('wrapperSubmit');
     const skipSystemTasksEl = document.getElementById('skipSystemTasks');
+    const skipSystemTasksLabelEl = document.getElementById('skipSystemTasksLabel');
 
     let items = new Map();
     let selectedId = null;
@@ -561,6 +562,10 @@
       mdPreviewEl.style.display = 'none';
     };
 
+    skipSystemTasksEl.onchange = () => {
+      ws.send(JSON.stringify({ type: 'toggle_skip', enabled: skipSystemTasksEl.checked }));
+    };
+
     replyEl.addEventListener('input', updateChatPreview);
 
     chatToolsEl.addEventListener('click', (e) => {
@@ -634,14 +639,24 @@
       ws.onmessage = (e) => {
         const m = JSON.parse(e.data);
         if (m.type === 'pending_list') { m.data.forEach(i => items.set(i.id, { ...i, at: Date.now() })); }
+        if (m.type === 'skip_state') {
+          skipSystemTasksEl.checked = !!m.enabled;
+          if (m.locked) {
+            skipSystemTasksEl.disabled = true;
+            skipSystemTasksLabelEl.style.opacity = '0.5';
+            skipSystemTasksLabelEl.querySelector('span').textContent = 'Skip System Tasks (Managed by Server)';
+            skipSystemTasksLabelEl.title = 'This setting is locked by the server environment configuration.';
+          } else {
+            skipSystemTasksEl.disabled = false;
+            skipSystemTasksLabelEl.style.opacity = '1';
+            skipSystemTasksLabelEl.querySelector('span').textContent = 'Skip System Tasks';
+            skipSystemTasksLabelEl.title = 'Automatically respond to system prompts. Note: This setting resets on server restart.';
+          }
+        }
         if (m.type === 'incoming') { items.set(m.id, { ...m, at: Date.now() }); if (!selectedId) selectedId = m.id; }
         if (m.type === 'system_prompt_request') {
           items.set(m.id, { ...m, at: Date.now() });
           selectedId = m.id;
-          if (skipSystemTasksEl.checked) {
-            console.log('SYSTEM_PROMPT: Skipping system task for id:', m.id);
-            submitOperatorReply(m.id, "");
-          }
         }
         if (['answered', 'expired', 'client_disconnected'].includes(m.type)) {
           const it = items.get(m.id); if(it) it.done = true;

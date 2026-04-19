@@ -151,6 +151,7 @@ For a detailed mapping of communication flows between Open-WebUI and Ollama, inc
 - `PANEL_PORT` (default `3000`)
 - `UNO_REVERSE_TIMEOUT_SECONDS` (default `300`)
 - `OPERATOR_HISTORY_LIMIT` (default `20`): Number of recent chat messages to include in the system prompt history.
+- `SKIP_SYSTEM_TASKS` (default `undefined`): If set to `true`, the server will automatically respond to system prompts (titles, tags, etc.) with default values. If set, the UI toggle is locked. If unset, operators can toggle this at runtime (not persisted across restarts).
 
 Example:
 ```bash

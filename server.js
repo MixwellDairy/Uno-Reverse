@@ -15,6 +15,10 @@ const OPERATOR_HISTORY_LIMIT = Number(process.env.OPERATOR_HISTORY_LIMIT || 20);
 const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 50);
 const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 1000);
 
+// If SKIP_SYSTEM_TASKS env is set, UI toggle is locked (“Managed by Server”).
+const IS_SKIP_LOCKED = process.env.SKIP_SYSTEM_TASKS !== undefined;
+let skipSystemTasks = process.env.SKIP_SYSTEM_TASKS === "true";
+
 // -------------------------
 // State
 // -------------------------
@@ -522,7 +526,13 @@ panelApp.use(bodyParser.json());
 panelApp.use(express.static(path.join(__dirname, "public")));
 
 panelApp.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "control-panel", time: nowIso() });
+  res.json({
+    ok: true,
+    service: "control-panel",
+    time: nowIso(),
+    skip_system_tasks: skipSystemTasks,
+    skip_locked: IS_SKIP_LOCKED
+  });
 });
 
 panelApp.post("/operator-reply", async (req, res) => {
@@ -585,12 +595,21 @@ function broadcast(messageObj) {
 wss.on("connection", (ws) => {
   const list = Array.from(pending.values()).map((entry) => entry.meta);
   ws.send(JSON.stringify({ type: "pending_list", data: list }));
+  ws.send(JSON.stringify({ type: "skip_state", enabled: skipSystemTasks, locked: IS_SKIP_LOCKED }));
 
   ws.on("message", async (raw) => {
     let msg;
     try {
       msg = JSON.parse(raw.toString());
     } catch {
+      return;
+    }
+
+    if (msg.type === "toggle_skip") {
+      if (IS_SKIP_LOCKED) return;
+      skipSystemTasks = !!msg.enabled;
+      log(`SYSTEM_PROMPT: Skip system tasks toggled to: ${skipSystemTasks}`);
+      broadcast({ type: "skip_state", enabled: skipSystemTasks, locked: IS_SKIP_LOCKED });
       return;
     }
 
@@ -646,7 +665,13 @@ ollamaApp.use((req, res, next) => {
 });
 
 ollamaApp.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "fake-ollama", time: nowIso() });
+  res.json({
+    ok: true,
+    service: "fake-ollama",
+    time: nowIso(),
+    skip_system_tasks: skipSystemTasks,
+    skip_locked: IS_SKIP_LOCKED
+  });
 });
 
 ollamaApp.get("/api/tags", (_req, res) => {
@@ -721,7 +746,7 @@ function updateChatHistory(chatId, role, content) {
   }
 }
 
-function handleGenerateLike(req, res) {
+async function handleGenerateLike(req, res) {
   const body = req.body || {};
   const model = safeString(body.model || "uno-reverse");
   const prompt = extractPromptFromBody(body);
@@ -762,6 +787,20 @@ function handleGenerateLike(req, res) {
   if (meta.kind === "wrapped_prompt") {
     log(`SYSTEM_PROMPT: Received system prompt for chat_id: ${id}`);
     log(`SYSTEM_PROMPT: Looked up history for chat_id: ${id}`);
+
+    if (skipSystemTasks) {
+      log(`SYSTEM_PROMPT: Auto-skipping system task for id: ${id}, type: ${meta.wrapper.type}`);
+      const finalContent = normalizeReplyForEntry({ meta }, ""); // empty reply for auto-skip
+      const entry = { res, meta };
+
+      if (stream) {
+        res.status(200);
+        res.setHeader("Content-Type", format === "openai" ? "text/event-stream" : "application/x-ndjson; charset=utf-8");
+      }
+
+      await sendFinalResponse(entry, finalContent);
+      return;
+    }
   }
 
   if (stream) {
