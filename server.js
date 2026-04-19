@@ -288,20 +288,20 @@ function normalizeTitleReply(content, fallbackTitle) {
   return JSON.stringify({ title: text });
 }
 
-function createRequestMeta(id, model, prompt, body, createdAt) {
+function createRequestMeta(id, model, prompt, body, createdAt, format, stream) {
   const wrappedPrompt = findSystemPromptWrapper(body, prompt);
+  const baseMeta = { id, model, created_at: createdAt, format, stream };
+
   if (!wrappedPrompt) {
-    return { id, model, prompt, created_at: createdAt, kind: "chat", title_request: null };
+    return { ...baseMeta, prompt, kind: "chat", title_request: null };
   }
 
   const wrapper = wrappedPrompt.wrapper;
   const payload = typeof wrapper.buildPayload === "function" ? wrapper.buildPayload(body, wrappedPrompt.promptText) : {};
 
   return {
-    id,
-    model,
+    ...baseMeta,
     prompt: wrapper.label,
-    created_at: createdAt,
     kind: "wrapped_prompt",
     wrapper: {
       type: wrapper.type,
@@ -346,12 +346,64 @@ function sleep(ms) {
 // Delay between word tokens when streaming a reply to the client (~15ms ≈ 60 words/sec)
 const STREAM_TOKEN_DELAY_MS = 15;
 
-async function streamContent(res, model, content) {
+function wrapResponse(content, meta, done = true) {
+  const { model, format, id, created_at } = meta;
+
+  if (format === "openai") {
+    return {
+      id: `chatcmpl-${id}`,
+      object: meta.stream ? "chat.completion.chunk" : "chat.completion",
+      created: Math.floor(new Date(created_at).getTime() / 1000),
+      model,
+      choices: [
+        meta.stream
+          ? {
+              index: 0,
+              delta: { content },
+              finish_reason: done ? "stop" : null
+            }
+          : {
+              index: 0,
+              message: { role: "assistant", content },
+              finish_reason: "stop"
+            }
+      ],
+      ...(done && !meta.stream ? { usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } } : {})
+    };
+  }
+
+  if (format === "ollama-chat") {
+    return {
+      model,
+      created_at: nowIso(),
+      message: { role: "assistant", content },
+      done
+    };
+  }
+
+  // default to ollama-generate
+  return {
+    model,
+    created_at: nowIso(),
+    response: content,
+    done
+  };
+}
+
+async function streamContent(entry, content) {
+  const { res, meta } = entry;
+  const { format } = meta;
+
   // Split into alternating word / whitespace tokens so spacing is preserved exactly
   const tokens = content.split(/(\s+)/).filter(Boolean);
+
   for (const token of tokens) {
     try {
-      ndjsonWrite(res, { model, created_at: nowIso(), response: token, done: false });
+      if (format === "openai") {
+        res.write(`data: ${JSON.stringify(wrapResponse(token, meta, false))}\n\n`);
+      } else {
+        ndjsonWrite(res, wrapResponse(token, meta, false));
+      }
     } catch {
       return;
     }
@@ -359,11 +411,38 @@ async function streamContent(res, model, content) {
       await sleep(STREAM_TOKEN_DELAY_MS);
     }
   }
+
   try {
-    ndjsonWrite(res, { model, created_at: nowIso(), response: "", done: true });
+    if (format === "openai") {
+      res.write(`data: ${JSON.stringify(wrapResponse("", meta, true))}\n\n`);
+      res.write("data: [DONE]\n\n");
+    } else {
+      ndjsonWrite(res, wrapResponse("", meta, true));
+    }
     res.end();
   } catch {
     // client disconnected mid-stream
+  }
+}
+
+async function sendFinalResponse(entry, finalContent) {
+  const { res, meta } = entry;
+  if (!meta.stream) {
+    const payload = wrapResponse(finalContent, meta, true);
+    res.status(200).json(payload);
+  } else {
+    // For system prompts, we often want to send the JSON immediately rather than streaming words
+    if (meta.kind === "wrapped_prompt") {
+      if (meta.format === "openai") {
+        res.write(`data: ${JSON.stringify(wrapResponse(finalContent, meta, true))}\n\n`);
+        res.write("data: [DONE]\n\n");
+      } else {
+        ndjsonWrite(res, wrapResponse(finalContent, meta, true));
+      }
+      res.end();
+    } else {
+      await streamContent(entry, finalContent);
+    }
   }
 }
 
@@ -401,20 +480,9 @@ panelApp.post("/operator-reply", async (req, res) => {
 
   try {
     const finalContent = normalizeReplyForEntry(entry, safeContent);
-    log(`SYSTEM_PROMPT: Sent reply to client for id: ${safeId}, payload: ${finalContent}`);
+    log(`SYSTEM_PROMPT: Sent reply to client for id: ${safeId}, payload: ${finalContent}, stream: ${entry.meta.stream}`);
 
-    // For system prompts, we often want to send the JSON immediately rather than streaming words
-    if (entry.meta.kind === "wrapped_prompt") {
-      ndjsonWrite(entry.res, {
-        model: entry.meta.model,
-        created_at: nowIso(),
-        response: finalContent,
-        done: true
-      });
-      entry.res.end();
-    } else {
-      await streamContent(entry.res, entry.meta.model, finalContent);
-    }
+    await sendFinalResponse(entry, finalContent);
 
     broadcast({
       type: "answered",
@@ -470,7 +538,7 @@ wss.on("connection", (ws) => {
 
     try {
       const finalContent = normalizeReplyForEntry(entry, content);
-      await streamContent(entry.res, entry.meta.model, finalContent);
+      await sendFinalResponse(entry, finalContent);
     } catch (err) {
       console.error("Failed writing response stream:", err);
     }
@@ -559,17 +627,35 @@ function handleGenerateLike(req, res) {
   const id = extractId(req);
   const createdAt = nowIso();
 
-  res.status(200);
-  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
+  // Determine format based on endpoint
+  let format = "ollama-generate";
+  if (req.originalUrl.includes("/v1/chat/completions")) {
+    format = "openai";
+  } else if (req.originalUrl.includes("/api/chat")) {
+    format = "ollama-chat";
+  }
 
-  ndjsonWrite(res, { model, created_at: createdAt, response: "", done: false });
+  // OpenAI defaults to stream: false, Ollama defaults to stream: true
+  const stream = body.stream !== undefined ? body.stream === true : format !== "openai";
 
-  const meta = createRequestMeta(id, model, prompt, body, createdAt);
+  const meta = createRequestMeta(id, model, prompt, body, createdAt, format, stream);
+
+  if (stream) {
+    res.status(200);
+    res.setHeader("Content-Type", format === "openai" ? "text/event-stream" : "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+
+    // Optional: initial empty chunk
+    if (format === "openai") {
+      res.write(`data: ${JSON.stringify(wrapResponse("", meta, false))}\n\n`);
+    } else {
+      ndjsonWrite(res, wrapResponse("", meta, false));
+    }
+  }
 
   if (meta.kind === "wrapped_prompt") {
-    log(`SYSTEM_PROMPT: Intercepted system prompt for id: ${id}, type: ${meta.wrapper.type}`);
+    log(`SYSTEM_PROMPT: Intercepted system prompt for id: ${id}, type: ${meta.wrapper.type}, stream: ${stream}, format: ${format}`);
   }
 
   const timer = setTimeout(() => {
@@ -577,9 +663,20 @@ function handleGenerateLike(req, res) {
       if (meta.kind === "wrapped_prompt") {
         log(`SYSTEM_PROMPT: Timeout for id: ${id}`);
       }
-      ndjsonWrite(res, { model, created_at: nowIso(), response: "[Operator did not respond in time]", done: false });
-      ndjsonWrite(res, { model, created_at: nowIso(), response: "", done: true });
-      res.end();
+      if (stream) {
+        const timeoutMsg = "[Operator did not respond in time]";
+        if (format === "openai") {
+          res.write(`data: ${JSON.stringify(wrapResponse(timeoutMsg, meta, false))}\n\n`);
+          res.write(`data: ${JSON.stringify(wrapResponse("", meta, true))}\n\n`);
+          res.write("data: [DONE]\n\n");
+        } else {
+          ndjsonWrite(res, wrapResponse(timeoutMsg, meta, false));
+          ndjsonWrite(res, wrapResponse("", meta, true));
+        }
+        res.end();
+      } else {
+        res.status(504).json({ error: "Operator timeout" });
+      }
     } catch (err) {
       console.error("Timeout stream close error:", err);
     } finally {
