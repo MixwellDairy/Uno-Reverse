@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>uno-reverse · Control Panel</title>
+  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+  <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
   <style>
     :root {
       --bg: #0b1020;
@@ -99,7 +101,6 @@
       font-weight: bold;
     }
     .btn:disabled { opacity: 0.5; }
-    .toolbar { display:flex; gap:8px; margin: 8px 0; flex-wrap:wrap; }
     .toolbtn {
       border:1px solid var(--border);
       background:#1a254a;
@@ -109,22 +110,6 @@
       cursor:pointer;
     }
     .toolbtn:hover { background:#243060; }
-    .toolbar-sep { width:1px; background:var(--border); margin:2px 4px; align-self:stretch; display:inline-block; }
-    .preview {
-      margin-top: 10px;
-      border:1px solid var(--border);
-      border-radius:8px;
-      background:#0f1735;
-      padding:10px;
-      min-height:46px;
-      max-height:180px;
-      overflow-y:auto;
-    }
-    .preview h1, .preview h2, .preview h3 { margin: 0.4em 0; }
-    .preview code { background:#1e2a4a; padding:2px 5px; border-radius:4px; font-family:monospace; font-size:0.9em; }
-    .preview blockquote { border-left:3px solid var(--accent); margin:4px 0; padding-left:10px; color:var(--muted); }
-    .preview hr { border:none; border-top:1px solid var(--border); margin:8px 0; }
-    .preview li { margin:2px 0 2px 18px; display:list-item; list-style-type:disc; }
     .context-block {
       margin-top: 8px;
       border: 1px solid var(--border);
@@ -214,6 +199,32 @@
       gap: 12px;
       margin-bottom: 8px;
     }
+    /* EasyMDE Dark Theme Overrides */
+    .EasyMDEContainer .CodeMirror {
+      background: #0d1430;
+      color: var(--text);
+      border-color: var(--border);
+      border-bottom-left-radius: 8px;
+      border-bottom-right-radius: 8px;
+    }
+    .EasyMDEContainer .editor-toolbar {
+      background: var(--panel);
+      border-color: var(--border);
+      border-top-left-radius: 8px;
+      border-top-right-radius: 8px;
+      opacity: 0.8;
+    }
+    .EasyMDEContainer .editor-toolbar i { color: var(--text); }
+    .EasyMDEContainer .editor-toolbar a:hover,
+    .EasyMDEContainer .editor-toolbar a.active {
+      background: var(--border);
+      border-color: var(--accent);
+    }
+    .EasyMDEContainer .editor-preview {
+      background: #0b1020;
+      color: var(--text);
+    }
+    .EasyMDEContainer .CodeMirror-cursor { border-left: 2px solid var(--accent); }
   </style>
 </head>
 <body>
@@ -241,22 +252,7 @@
         <div id="chat" class="chat-body" style="display:flex; flex-direction:column"></div>
         <div id="chatAttachments" class="attachments" style="padding: 0 16px 8px 16px; background: rgba(0,0,0,0.2);"></div>
         <div class="composer">
-          <div id="chatTools" class="toolbar" style="display:none">
-            <button class="toolbtn" data-insert="# " type="button" title="Heading 1">H1</button>
-            <button class="toolbtn" data-insert="## " type="button" title="Heading 2">H2</button>
-            <button class="toolbtn" data-insert="### " type="button" title="Heading 3">H3</button>
-            <span class="toolbar-sep"></span>
-            <button class="toolbtn" data-wrap="**" type="button" title="Bold"><strong>B</strong></button>
-            <button class="toolbtn" data-wrap="*" type="button" title="Italic"><em>I</em></button>
-            <button class="toolbtn" data-wrap="`" type="button" title="Inline code" style="font-family:monospace;letter-spacing:-1px">Code</button>
-            <span class="toolbar-sep"></span>
-            <button class="toolbtn" data-insert="- " type="button" title="Bullet list">• List</button>
-            <button class="toolbtn" data-insert="&gt; " type="button" title="Blockquote">❝</button>
-            <button class="toolbtn" data-insert="---&#10;" type="button" title="Divider">—</button>
-            <button class="toolbtn" data-insert="✨ " type="button" title="Emoji">✨</button>
-          </div>
           <textarea id="reply" placeholder="Type AI response..." disabled></textarea>
-          <div id="mdPreview" class="preview" style="display:none"></div>
           <div style="margin-top:8px; text-align:right">
             <button id="send" class="btn" disabled>Send Reply</button>
           </div>
@@ -276,19 +272,7 @@
       </div>
       <div id="wrapperModalContext" class="context-block"></div>
       <div id="wrapperModalAttachments" class="attachments"></div>
-      <div id="wrapperTools" class="toolbar" style="display:none">
-        <button class="toolbtn" data-insert="# " type="button" title="Heading 1">H1</button>
-        <button class="toolbtn" data-insert="## " type="button" title="Heading 2">H2</button>
-        <button class="toolbtn" data-insert="### " type="button" title="Heading 3">H3</button>
-        <span class="toolbar-sep"></span>
-        <button class="toolbtn" data-wrap="**" type="button" title="Bold"><strong>B</strong></button>
-        <button class="toolbtn" data-wrap="*" type="button" title="Italic"><em>I</em></button>
-        <button class="toolbtn" data-wrap="`" type="button" title="Inline code" style="font-family:monospace;letter-spacing:-1px">Code</button>
-        <span class="toolbar-sep"></span>
-        <button class="toolbtn" data-insert="✨ " type="button" title="Emoji">✨</button>
-      </div>
       <textarea id="wrapperReply" placeholder="Write response..." disabled></textarea>
-      <div id="wrapperPreview" class="preview" style="display:none"></div>
       <div style="margin-top:8px; text-align:right">
         <button id="wrapperSubmit" class="btn" disabled>Submit Task</button>
       </div>
@@ -304,8 +288,6 @@
     const countEl = document.getElementById('count');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
-    const chatToolsEl = document.getElementById('chatTools');
-    const mdPreviewEl = document.getElementById('mdPreview');
     const wrapperModalBackdropEl = document.getElementById('wrapperModalBackdrop');
     const wrapperModalTitleEl = document.getElementById('wrapperModalTitle');
     const wrapperModalInstructionEl = document.getElementById('wrapperModalInstruction');
@@ -313,12 +295,32 @@
     const wrapperModalContextEl = document.getElementById('wrapperModalContext');
     const wrapperModalAttachmentsEl = document.getElementById('wrapperModalAttachments');
     const wrapperCloseEl = document.getElementById('wrapperClose');
-    const wrapperToolsEl = document.getElementById('wrapperTools');
     const wrapperReplyEl = document.getElementById('wrapperReply');
-    const wrapperPreviewEl = document.getElementById('wrapperPreview');
     const wrapperSubmitEl = document.getElementById('wrapperSubmit');
     const skipSystemTasksEl = document.getElementById('skipSystemTasks');
     const skipSystemTasksLabelEl = document.getElementById('skipSystemTasksLabel');
+
+    const chatMDE = new EasyMDE({
+      element: replyEl,
+      spellChecker: false,
+      status: false,
+      placeholder: 'Type Markdown and press Cmd+Enter/Ctrl+Enter to send...',
+      extraKeys: {
+        "Cmd-Enter": () => sendBtn.click(),
+        "Ctrl-Enter": () => sendBtn.click(),
+      },
+    });
+
+    const wrapperMDE = new EasyMDE({
+      element: wrapperReplyEl,
+      spellChecker: false,
+      status: false,
+      placeholder: 'Type Markdown and press Cmd+Enter/Ctrl+Enter to submit...',
+      extraKeys: {
+        "Cmd-Enter": () => wrapperSubmitEl.click(),
+        "Ctrl-Enter": () => wrapperSubmitEl.click(),
+      },
+    });
 
     let items = new Map();
     let selectedId = null;
@@ -335,54 +337,6 @@
         .replace(/'/g, '&#39;');
     }
 
-    function renderMarkdown(md) {
-      if (!md) return '';
-      // escapeHtml first (safe), then markdown transforms
-      // Note: > becomes &gt; after escapeHtml, so blockquote pattern matches &gt;
-      const s = escapeHtml(md);
-      return s
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`(.+?)`/g, '<code>$1</code>')
-        .replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-        .replace(/^- (.+)$/gm, '<li>$1</li>')
-        .replace(/^---$/gm, '<hr>')
-        .replace(/\n/g, '<br>');
-    }
-
-    function setSelectionText(targetEl, insertText, wrapText) {
-      const start = targetEl.selectionStart || 0;
-      const end = targetEl.selectionEnd || 0;
-      const before = targetEl.value.slice(0, start);
-      const selected = targetEl.value.slice(start, end);
-      const after = targetEl.value.slice(end);
-      if (wrapText) {
-        targetEl.value = `${before}${wrapText}${selected || 'text'}${wrapText}${after}`;
-      } else {
-        targetEl.value = `${before}${insertText}${after}`;
-      }
-      targetEl.focus();
-    }
-
-    function updateWrapperPreview() {
-      const sel = items.get(selectedId);
-      if (!sel || sel.kind !== 'wrapped_prompt' || sel.wrapper?.editor !== 'markdown') {
-        wrapperPreviewEl.style.display = 'none';
-        return;
-      }
-      wrapperPreviewEl.style.display = 'block';
-      wrapperPreviewEl.innerHTML = renderMarkdown(wrapperReplyEl.value.trim() || sel.wrapper?.suggested_value || '');
-    }
-
-    function updateChatPreview() {
-      const val = replyEl.value.trim();
-      if (!val || replyEl.disabled) { mdPreviewEl.style.display = 'none'; return; }
-      mdPreviewEl.style.display = 'block';
-      mdPreviewEl.innerHTML = renderMarkdown(val);
-    }
 
     function wrapperRequestHtml(sel) {
       const wrapper = sel.wrapper || {};
@@ -444,17 +398,6 @@
       wrapperModalContextEl.textContent = wrapper.context || 'No chat context provided.';
       renderAttachments(wrapperModalAttachmentsEl, wrapper.attachments || sel.attachments);
 
-      if (wrapper.editor === 'markdown') {
-        wrapperToolsEl.style.display = 'flex';
-        wrapperPreviewEl.style.display = 'block';
-      } else {
-        wrapperToolsEl.style.display = 'none';
-        wrapperPreviewEl.style.display = 'none';
-      }
-
-      wrapperReplyEl.disabled = false;
-      wrapperSubmitEl.disabled = false;
-
       const placeholders = {
           title: 'Enter chat title (e.g. 📊 Market Research)',
           follow_up: 'Enter follow-up questions, one per line...',
@@ -463,10 +406,15 @@
           system_generic: 'Enter response...'
       };
 
-      wrapperReplyEl.placeholder = placeholders[wrapper.type] || 'Write response...';
-      wrapperReplyEl.value = Array.isArray(wrapper.suggested_value) ? wrapper.suggested_value.join('\n') : (wrapper.suggested_value || '');
-      wrapperReplyEl.focus();
-      updateWrapperPreview();
+      const placeholder = placeholders[wrapper.type] || 'Write response...';
+      const initialValue = Array.isArray(wrapper.suggested_value) ? wrapper.suggested_value.join('\n') : (wrapper.suggested_value || '');
+
+      wrapperMDE.codemirror.setOption('placeholder', placeholder);
+      wrapperMDE.value(initialValue);
+      wrapperMDE.codemirror.setOption('readOnly', false);
+      wrapperSubmitEl.disabled = false;
+
+      wrapperMDE.codemirror.focus();
       console.log('SYSTEM_PROMPT: Modal opened for id:', sel.id, 'type:', wrapper.type);
     }
 
@@ -476,10 +424,9 @@
       }
       wrapperModalBackdropEl.style.display = 'none';
       wrapperModalOpenFor = null;
-      wrapperReplyEl.value = '';
-      wrapperReplyEl.disabled = true;
+      wrapperMDE.value('');
+      wrapperMDE.codemirror.setOption('readOnly', true);
       wrapperSubmitEl.disabled = true;
-      wrapperPreviewEl.style.display = 'none';
       wrapperModalHistoryEl.innerHTML = '';
     }
 
@@ -500,110 +447,75 @@
           : `<div class="bubble user">${escapeHtml(sel.prompt || '')}</div>`;
 
         if (sel.kind === 'wrapped_prompt') {
-          replyEl.disabled = true;
+          chatMDE.codemirror.setOption('readOnly', true);
           sendBtn.disabled = true;
-          replyEl.value = '';
-          replyEl.placeholder = 'Use the task modal for this system prompt';
-          chatToolsEl.style.display = 'none';
-          mdPreviewEl.style.display = 'none';
+          chatMDE.value('');
+          chatMDE.codemirror.setOption('placeholder', 'Use the task modal for this system prompt');
           chatHistoryEl.style.display = 'none';
           chatAttachmentsEl.style.display = 'none';
           if (wrapperModalOpenFor !== sel.id && wrapperModalDismissedFor !== sel.id) openWrapperModalForSelection();
         } else {
           wrapperModalDismissedFor = null;
           closeWrapperModal();
-          replyEl.disabled = false;
+          chatMDE.codemirror.setOption('readOnly', false);
           sendBtn.disabled = false;
-          replyEl.placeholder = 'Type AI response...';
-          chatToolsEl.style.display = 'flex';
+          chatMDE.codemirror.setOption('placeholder', 'Type Markdown and press Cmd+Enter/Ctrl+Enter to send...');
 
           chatHistoryEl.style.display = 'flex';
           renderHistory(chatHistoryEl, sel.history);
 
           chatAttachmentsEl.style.display = 'flex';
           renderAttachments(chatAttachmentsEl, sel.attachments);
-
-          updateChatPreview();
         }
       } else {
         chatEl.innerHTML = '<div style="text-align:center; margin-top:50px; opacity:0.5">Select a request</div>';
         closeWrapperModal();
-        replyEl.disabled = true;
+        chatMDE.codemirror.setOption('readOnly', true);
         sendBtn.disabled = true;
-        replyEl.value = '';
-        chatToolsEl.style.display = 'none';
-        mdPreviewEl.style.display = 'none';
+        chatMDE.value('');
         chatHistoryEl.style.display = 'none';
         chatAttachmentsEl.style.display = 'none';
       }
 
       const openBtn = document.getElementById('openWrapperTaskBtn');
-      // Synchronization logic for title editor tool buttons (if they existed separately)
-      // but in this version it seems they use shared ones.
-      // Re-adding the line that was accidentally removed if it's still relevant.
-      const titleToolsEl = document.getElementById('titleTools');
-      if (titleToolsEl) titleToolsEl.style.display = chatToolsEl.style.display;
       if (openBtn) openBtn.onclick = () => openWrapperModalForSelection(true);
     }
 
     window.select = (id) => {
       if (selectedId !== id) wrapperModalDismissedFor = null;
       selectedId = id;
-      replyEl.value = '';
-      mdPreviewEl.style.display = 'none';
+      chatMDE.value('');
       render();
     };
 
     sendBtn.onclick = () => {
-      const text = replyEl.value.trim();
+      const text = chatMDE.value().trim();
       if (!text || !selectedId) return;
       ws.send(JSON.stringify({ type: 'reply', id: selectedId, content: text }));
-      replyEl.value = '';
-      mdPreviewEl.style.display = 'none';
+      chatMDE.value('');
     };
 
     skipSystemTasksEl.onchange = () => {
       ws.send(JSON.stringify({ type: 'toggle_skip', enabled: skipSystemTasksEl.checked }));
     };
 
-    replyEl.addEventListener('input', updateChatPreview);
-
-    chatToolsEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const insert = btn.getAttribute('data-insert');
-      const wrap = btn.getAttribute('data-wrap');
-      setSelectionText(replyEl, insert || '', wrap || '');
-      updateChatPreview();
-    });
-
     wrapperCloseEl.onclick = () => closeWrapperModal(true);
     wrapperModalBackdropEl.addEventListener('click', (e) => {
       if (e.target === wrapperModalBackdropEl) closeWrapperModal(true);
     });
-    wrapperReplyEl.addEventListener('input', updateWrapperPreview);
 
     wrapperModalHistoryEl.addEventListener('click', (e) => {
       const msg = e.target.closest('.history-msg');
       if (msg) msg.classList.toggle('expanded');
     });
 
-    wrapperToolsEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const insert = btn.getAttribute('data-insert');
-      const wrap = btn.getAttribute('data-wrap');
-      setSelectionText(wrapperReplyEl, insert || '', wrap || '');
-      updateWrapperPreview();
-    });
-
     wrapperSubmitEl.onclick = async () => {
       const sel = items.get(selectedId);
       if (!sel || sel.kind !== 'wrapped_prompt') return;
-      const text = wrapperReplyEl.value.trim();
+      const text = wrapperMDE.value().trim();
 
       wrapperSubmitEl.disabled = true;
-      wrapperReplyEl.disabled = true;
+      wrapperMDE.codemirror.setOption('readOnly', true);
 
       await submitOperatorReply(sel.id, text);
     };
@@ -627,7 +539,7 @@
           if (wrapperModalOpenFor === id) {
             alert('Error: ' + err.message);
             wrapperSubmitEl.disabled = false;
-            wrapperReplyEl.disabled = false;
+            wrapperMDE.codemirror.setOption('readOnly', false);
           }
       }
     }
