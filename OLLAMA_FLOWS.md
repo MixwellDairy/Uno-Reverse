@@ -147,7 +147,19 @@ graph TD
 
 ---
 
-## 7. Gaps & Improvements for uno-reverse
+## 7. System Prompt Interception (Open-WebUI Meta Tasks)
+
+Open-WebUI often sends "meta" requests to the LLM to perform background tasks like generating a chat title, suggested follow-up questions, or tags. `uno-reverse` identifies these using regex patterns and "wraps" them into specialized system tasks.
+
+### Interception Logic
+1.  **Detection**: `server.js` scans incoming prompts/messages for patterns matching `SYSTEM_PROMPT_WRAPPERS` (e.g., "generate a concise title").
+2.  **State Management**: Instead of showing these in the main chat, `uno-reverse` marks them as `kind: "wrapped_prompt"`.
+3.  **UI Feedback**: The operator panel displays a specific modal for these tasks, allowing for structured input (e.g., a single line for a title).
+4.  **Auto-Response**: If `SKIP_SYSTEM_TASKS` is enabled (via environment variable or UI toggle), the server intercepts these requests and immediately returns a default response (e.g., `{"title": "Chat Summary"}`) without notifying the operator.
+
+---
+
+## 8. Gaps & Improvements for uno-reverse
 
 1.  **Embedding Stub**: Implement a basic `/api/embed` that returns random/zero vectors so RAG operations don't fail when `uno-reverse` is the primary backend.
 2.  **Web Search Mock**: Implement `/api/web_search` to allow testing of Open-WebUI's agentic features.
