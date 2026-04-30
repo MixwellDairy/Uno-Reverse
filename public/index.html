@@ -370,7 +370,7 @@
             if (a.type === 'image' || a.type === 'image_url') {
                 return `<div class="attachment" style="display:flex; flex-direction:column; gap:4px">
                     <span>🖼️ ${escapeHtml(a.name)}</span>
-                    ${a.url ? `<img src="${a.url}" style="max-width:200px; max-height:200px; border-radius:4px" />` : ''}
+                    ${a.url ? `<img src="${escapeHtml(a.url)}" style="max-width:200px; max-height:200px; border-radius:4px" />` : ''}
                 </div>`;
             }
             return `<span class="attachment">📎 ${escapeHtml(a.type)} · ${escapeHtml(a.name)}</span>`;
@@ -434,8 +434,8 @@
       const arr = [...items.values()].filter(i => !i.done).sort((a,b) => b.at - a.at);
       countEl.textContent = arr.length;
       listEl.innerHTML = arr.map(i => `
-        <div class="item ${i.id === selectedId ? 'active' : ''}" onclick="select('${i.id}')">
-          <div style="font-size:12px; opacity:0.7">${i.id}</div>
+        <div class="item ${i.id === selectedId ? 'active' : ''}" data-id="${escapeHtml(i.id)}">
+          <div style="font-size:12px; opacity:0.7">${escapeHtml(i.id)}</div>
           <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(i.kind === 'wrapped_prompt' ? (i.wrapper?.label || 'System task') : (i.prompt || ''))}</div>
         </div>
       `).join('');
@@ -479,7 +479,17 @@
 
       const openBtn = document.getElementById('openWrapperTaskBtn');
       if (openBtn) openBtn.onclick = () => openWrapperModalForSelection(true);
+
+      // Update page title with pending count
+      const pendingCount = arr.length;
+      document.title = pendingCount > 0 ? `(${pendingCount}) uno-reverse · Control Panel` : 'uno-reverse · Control Panel';
     }
+
+    // Event delegation for list clicks — avoids inline onclick with unescaped ids
+    listEl.addEventListener('click', (e) => {
+      const el = e.target.closest('.item[data-id]');
+      if (el) select(el.dataset.id);
+    });
 
     window.select = (id) => {
       if (selectedId !== id) wrapperModalDismissedFor = null;
@@ -502,6 +512,13 @@
     wrapperCloseEl.onclick = () => closeWrapperModal(true);
     wrapperModalBackdropEl.addEventListener('click', (e) => {
       if (e.target === wrapperModalBackdropEl) closeWrapperModal(true);
+    });
+
+    // Escape key closes the system-task modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && wrapperModalBackdropEl.style.display === 'flex') {
+        closeWrapperModal(true);
+      }
     });
 
     wrapperModalHistoryEl.addEventListener('click', (e) => {
