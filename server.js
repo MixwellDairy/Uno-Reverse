@@ -48,6 +48,13 @@ function safeString(value) {
   }
 }
 
+function toImageDataUrl(img) {
+  if (typeof img !== "string") return null;
+  const value = img.trim();
+  if (!value) return null;
+  return value.startsWith("data:") ? value : `data:image/png;base64,${value}`;
+}
+
 function extractMessageText(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -84,12 +91,6 @@ function extractPromptFromBody(body) {
 function extractAttachmentsFromBody(body) {
   if (!body || typeof body !== "object") return [];
   const attachments = [];
-  const toImageDataUrl = (img) => {
-    if (typeof img !== "string") return null;
-    const value = img.trim();
-    if (!value) return null;
-    return value.startsWith("data:") ? value : `data:image/png;base64,${value}`;
-  };
 
   // Handle Ollama /api/chat images (top-level images array in message)
   if (Array.isArray(body.messages)) {
@@ -562,7 +563,7 @@ panelApp.post("/operator-reply", async (req, res) => {
     return res.status(404).json({ error: "Request not found or expired" });
   }
   if (!safeContent && entry.meta.kind !== "wrapped_prompt") {
-    return res.status(400).json({ error: "Missing content" });
+    return res.status(400).json({ error: "Reply content cannot be empty" });
   }
 
   log(`SYSTEM_PROMPT: Operator reply received for id: ${safeId}`);
