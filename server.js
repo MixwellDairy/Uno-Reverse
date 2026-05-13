@@ -14,6 +14,8 @@ const TIMEOUT_SECONDS = Number(process.env.UNO_REVERSE_TIMEOUT_SECONDS || 300);
 const OPERATOR_HISTORY_LIMIT = Number(process.env.OPERATOR_HISTORY_LIMIT || 20);
 const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 50);
 const MAX_SESSIONS = Number(process.env.MAX_SESSIONS || 1000);
+const SERVER_VERSION = require("./package.json").version;
+const OPENAI_EMBEDDING_DIMENSION = 1536;
 
 // If SKIP_SYSTEM_TASKS env is set, UI toggle is locked (“Managed by Server”).
 const IS_SKIP_LOCKED = process.env.SKIP_SYSTEM_TASKS !== undefined;
@@ -90,6 +92,7 @@ function extractAttachmentsFromBody(body) {
     for (const msg of body.messages) {
       if (Array.isArray(msg.images)) {
         for (const img of msg.images) {
+          if (typeof img !== "string") continue;
           attachments.push({
             type: "image",
             name: "image.png",
@@ -121,6 +124,7 @@ function extractAttachmentsFromBody(body) {
   // Handle Ollama /api/generate images (top-level images array in body)
   if (Array.isArray(body.images)) {
     for (const img of body.images) {
+      if (typeof img !== "string") continue;
       attachments.push({
         type: "image",
         name: "image.png",
@@ -359,9 +363,9 @@ function normalizeTitleReply(content, fallbackTitle) {
   return JSON.stringify({ title: text });
 }
 
-function createRequestMeta(id, model, prompt, body, createdAt, format, stream) {
+function createRequestMeta(reqId, chatId, model, prompt, body, createdAt, format, stream) {
   const wrappedPrompt = findSystemPromptWrapper(body, prompt);
-  const baseMeta = { id, model, created_at: createdAt, format, stream };
+  const baseMeta = { id: reqId, chat_id: chatId, model, created_at: createdAt, format, stream };
 
   if (!wrappedPrompt) {
     return { ...baseMeta, prompt, kind: "chat", title_request: null };
@@ -561,7 +565,7 @@ panelApp.post("/operator-reply", async (req, res) => {
 
     // Update history with assistant reply (only for regular chats)
     if (entry.meta.kind === "chat") {
-      updateChatHistory(safeId, "assistant", safeContent);
+      updateChatHistory(entry.meta.chat_id || safeId, "assistant", safeContent);
     }
 
     await sendFinalResponse(entry, finalContent);
@@ -632,7 +636,7 @@ wss.on("connection", (ws) => {
 
       // Update history with assistant reply (only for regular chats)
       if (entry.meta.kind === "chat") {
-        updateChatHistory(id, "assistant", content);
+        updateChatHistory(entry.meta.chat_id || id, "assistant", content);
       }
 
       await sendFinalResponse(entry, finalContent);
@@ -660,7 +664,7 @@ const ollamaApp = express();
 ollamaApp.use(cors());
 ollamaApp.use(bodyParser.json({ limit: "2mb" }));
 ollamaApp.use((req, res, next) => {
-  console.log(`[FAKE OLLAMA API] ${req.method} ${req.originalUrl}`);
+  log(`[FAKE OLLAMA API] ${req.method} ${req.originalUrl}`);
   next();
 });
 
@@ -750,7 +754,8 @@ async function handleGenerateLike(req, res) {
   const body = req.body || {};
   const model = safeString(body.model || "uno-reverse");
   const prompt = extractPromptFromBody(body);
-  const id = extractId(req);
+  const chatId = extractId(req);   // stable per-chat id (used for history)
+  const reqId = makeId();           // unique per-request id (used for pending map and UI tracking)
   const createdAt = nowIso();
 
   // Sync history with body.messages if available, capturing both user and assistant turns
@@ -761,9 +766,9 @@ async function handleGenerateLike(req, res) {
     })).filter(m => m.role !== "system");
 
     // We prioritize the client's view of the history as it's the ground truth for their UI
-    chatHistories.set(id, incoming.slice(-HISTORY_LIMIT));
+    chatHistories.set(chatId, incoming.slice(-HISTORY_LIMIT));
   } else if (body.prompt) {
-    updateChatHistory(id, "user", body.prompt);
+    updateChatHistory(chatId, "user", body.prompt);
   }
 
   // Determine format based on endpoint
@@ -777,19 +782,19 @@ async function handleGenerateLike(req, res) {
   // OpenAI defaults to stream: false, Ollama defaults to stream: true
   const stream = body.stream !== undefined ? body.stream === true : format !== "openai";
 
-  const meta = createRequestMeta(id, model, prompt, body, createdAt, format, stream);
+  const meta = createRequestMeta(reqId, chatId, model, prompt, body, createdAt, format, stream);
 
   // Attach history and attachments to meta
-  const history = chatHistories.get(id) || [];
+  const history = chatHistories.get(chatId) || [];
   meta.history = history;
   meta.attachments = extractAttachmentsFromBody(body);
 
   if (meta.kind === "wrapped_prompt") {
-    log(`SYSTEM_PROMPT: Received system prompt for chat_id: ${id}`);
-    log(`SYSTEM_PROMPT: Looked up history for chat_id: ${id}`);
+    log(`SYSTEM_PROMPT: Received system prompt for chat_id: ${chatId}`);
+    log(`SYSTEM_PROMPT: Looked up history for chat_id: ${chatId}`);
 
     if (skipSystemTasks) {
-      log(`SYSTEM_PROMPT: Auto-skipping system task for id: ${id}, type: ${meta.wrapper.type}`);
+      log(`SYSTEM_PROMPT: Auto-skipping system task for id: ${reqId}, type: ${meta.wrapper.type}`);
       const finalContent = normalizeReplyForEntry({ meta }, ""); // empty reply for auto-skip
       const entry = { res, meta };
 
@@ -818,13 +823,13 @@ async function handleGenerateLike(req, res) {
   }
 
   if (meta.kind === "wrapped_prompt") {
-    log(`SYSTEM_PROMPT: Intercepted system prompt for id: ${id}, type: ${meta.wrapper.type}, stream: ${stream}, format: ${format}`);
+    log(`SYSTEM_PROMPT: Intercepted system prompt for id: ${reqId}, type: ${meta.wrapper.type}, stream: ${stream}, format: ${format}`);
   }
 
   const timer = setTimeout(() => {
     try {
       if (meta.kind === "wrapped_prompt") {
-        log(`SYSTEM_PROMPT: Timeout for id: ${id}`);
+        log(`SYSTEM_PROMPT: Timeout for id: ${reqId}`);
       }
       if (stream) {
         const timeoutMsg = "[Operator did not respond in time]";
@@ -843,25 +848,25 @@ async function handleGenerateLike(req, res) {
     } catch (err) {
       console.error("Timeout stream close error:", err);
     } finally {
-      pending.delete(id);
-      broadcast({ type: "expired", id, expired_at: nowIso() });
+      pending.delete(reqId);
+      broadcast({ type: "expired", id: reqId, expired_at: nowIso() });
     }
   }, TIMEOUT_SECONDS * 1000);
 
-  pending.set(id, { res, timer, meta });
+  pending.set(reqId, { res, timer, meta });
 
   if (meta.kind === "wrapped_prompt") {
-    log(`SYSTEM_PROMPT: Emitting system_prompt_request for id: ${id}, history_length: ${meta.wrapper?.history?.length || 0}`);
+    log(`SYSTEM_PROMPT: Emitting system_prompt_request for id: ${reqId}, history_length: ${meta.wrapper?.history?.length || 0}`);
     broadcast({ type: "system_prompt_request", ...meta });
   } else {
     broadcast({ type: "incoming", ...meta });
   }
 
   res.on("close", () => {
-    if (pending.has(id)) {
+    if (pending.has(reqId)) {
       clearTimeout(timer);
-      pending.delete(id);
-      broadcast({ type: "client_disconnected", id, at: nowIso() });
+      pending.delete(reqId);
+      broadcast({ type: "client_disconnected", id: reqId, at: nowIso() });
     }
   });
 }
@@ -898,6 +903,43 @@ ollamaApp.post("/api/web_search", (req, res) => {
 
 ollamaApp.post("/api/ps", (_req, res) => {
   res.json({ ok: true, service: "prompt-service", status: "stub", time: nowIso() });
+});
+
+ollamaApp.get("/api/version", (_req, res) => {
+  res.json({ version: SERVER_VERSION });
+});
+
+ollamaApp.post("/api/show", (req, res) => {
+  const body = req.body || {};
+  const name = safeString(body.name || body.model || "uno-reverse");
+  log(`FAKE OLLAMA API: Intercepted /api/show for model: ${name}`);
+  res.json({
+    modelfile: "FROM human\nSYSTEM You are a helpful assistant controlled by a human operator.",
+    parameters: "",
+    template: "{{ .Prompt }}",
+    details: { format: "human", family: "operator", parameter_size: "N/A", quantization_level: "N/A" },
+    model_info: { "general.name": name }
+  });
+});
+
+ollamaApp.post("/v1/embeddings", (req, res) => {
+  const body = req.body || {};
+  const rawInput = body.input ?? "";
+  const inputs = Array.isArray(rawInput) ? rawInput : [rawInput];
+  const model = safeString(body.model || "text-embedding-ada-002");
+
+  log(`FAKE OLLAMA API: Intercepted /v1/embeddings for model: ${model}, input count: ${inputs.length}`);
+
+  res.json({
+    object: "list",
+    data: inputs.map((_, index) => ({
+      object: "embedding",
+      embedding: Array(OPENAI_EMBEDDING_DIMENSION).fill(0),
+      index
+    })),
+    model,
+    usage: { prompt_tokens: 0, total_tokens: 0 }
+  });
 });
 
 ollamaApp.listen(OLLAMA_PORT, "0.0.0.0", () => {
