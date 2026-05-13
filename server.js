@@ -84,16 +84,24 @@ function extractPromptFromBody(body) {
 function extractAttachmentsFromBody(body) {
   if (!body || typeof body !== "object") return [];
   const attachments = [];
+  const toImageDataUrl = (img) => {
+    if (typeof img !== "string") return null;
+    const value = img.trim();
+    if (!value) return null;
+    return value.startsWith("data:") ? value : `data:image/png;base64,${value}`;
+  };
 
   // Handle Ollama /api/chat images (top-level images array in message)
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (Array.isArray(msg.images)) {
         for (const img of msg.images) {
+          const url = toImageDataUrl(img);
+          if (!url) continue;
           attachments.push({
             type: "image",
             name: "image.png",
-            url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+            url
           });
         }
       }
@@ -104,10 +112,12 @@ function extractAttachmentsFromBody(body) {
         for (const part of content) {
           if (!part || typeof part !== "object") continue;
           if (part.type === "image_url") {
+            const imageUrl = typeof part.image_url?.url === "string" ? part.image_url.url.trim() : "";
+            if (!imageUrl) continue;
             attachments.push({
               type: "image",
               name: "image.png",
-              url: part.image_url?.url
+              url: imageUrl
             });
           } else if (part.type === "attachment" || part.type === "file") {
             const name = safeString(part.name || part.filename || part.title || part.type).slice(0, 200) || "attachment";
@@ -121,10 +131,12 @@ function extractAttachmentsFromBody(body) {
   // Handle Ollama /api/generate images (top-level images array in body)
   if (Array.isArray(body.images)) {
     for (const img of body.images) {
+      const url = toImageDataUrl(img);
+      if (!url) continue;
       attachments.push({
         type: "image",
         name: "image.png",
-        url: img.startsWith("data:") ? img : `data:image/png;base64,${img}`
+        url
       });
     }
   }
@@ -549,6 +561,9 @@ panelApp.post("/operator-reply", async (req, res) => {
     log(`SYSTEM_PROMPT: Reply received for unknown/expired id: ${safeId}`);
     return res.status(404).json({ error: "Request not found or expired" });
   }
+  if (!safeContent && entry.meta.kind !== "wrapped_prompt") {
+    return res.status(400).json({ error: "Missing content" });
+  }
 
   log(`SYSTEM_PROMPT: Operator reply received for id: ${safeId}`);
 
@@ -717,13 +732,13 @@ function extractId(req) {
   // Prioritize chat_id from body, then conversation_id, then metadata, then headers
   let id = body.chat_id || body.conversation_id;
 
-  if (id) return safeString(id);
+  if (id) return safeString(id).trim();
 
   id = (body.metadata && body.metadata.chat_id) ||
        req.headers["x-chat-id"] ||
        req.headers["x-request-id"];
 
-  if (id) return safeString(id);
+  if (id) return safeString(id).trim();
 
   const newId = makeId();
   log(`SYSTEM_PROMPT: Missing chat_id in request, generated new id: ${newId}`);
